@@ -1,33 +1,50 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import MemberTopbar from '@/components/MemberTopbar.vue'
 import ScheduleTable from '@/components/ScheduleTable.vue'
-import { getSchedules } from '@/api/schedule'
-import { clearToken } from '@/utils/auth'
+import EmptyState from '@/components/EmptyState.vue'
+import StatusTag from '@/components/StatusTag.vue'
+import UploadMeter from '@/components/UploadMeter.vue'
+import { getMySchedule, getMyUploadCount } from '@/api/schedule'
+import { useUserStore } from '@/stores/user'
+import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
+import { formatDateTime } from '@/utils/format'
 import { MAX_WEEK, addDays, getMonday, getWeekNumber, isCourseInWeek } from '@/utils/schedule'
 
 const router = useRouter()
+const userStore = useUserStore()
+
+const info = ref(null)
+const loading = ref(true)
+const errorMessage = ref('')
 
 const currentMonday = getMonday(new Date())
 const weekOffset = ref(0)
-
 const monday = computed(() => addDays(currentMonday, weekOffset.value * 7))
 const week = computed(() => getWeekNumber(monday.value))
-
-const schedules = ref([])
-const loading = ref(false)
-const errorMessage = ref('')
-
-const visibleCourses = computed(() => schedules.value.filter((c) => isCourseInWeek(c, week.value)))
-
 const canPrev = computed(() => week.value > 1)
 const canNext = computed(() => week.value < MAX_WEEK)
+
+const status = computed(() => info.value?.status ?? SCHEDULE_STATUS.NONE)
+const hasCourses = computed(() => (info.value?.courses.length ?? 0) > 0)
+const exhausted = computed(() => info.value && info.value.upload_count >= info.value.max_uploads)
+const visibleCourses = computed(() =>
+  (info.value?.courses ?? []).filter((c) => isCourseInWeek(c, week.value)),
+)
+
+const STEPS = ['提交课表', '管理员解析', '课表生效']
+const currentStep = computed(() => (status.value === SCHEDULE_STATUS.CONFIRMED ? 3 : 2))
 
 async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    schedules.value = await getSchedules()
+    const [scheduleInfo, uploadCount] = await Promise.all([
+      getMySchedule(userStore.profile),
+      getMyUploadCount(userStore.profile),
+    ])
+    info.value = { ...scheduleInfo, upload_count: uploadCount }
   } catch (err) {
     errorMessage.value = err?.message || '课表加载失败,请稍后重试'
   } finally {
@@ -35,9 +52,8 @@ async function load() {
   }
 }
 
-function logout() {
-  clearToken()
-  router.replace({ name: 'login' })
+function goUpload() {
+  router.push({ name: 'upload' })
 }
 
 onMounted(load)
@@ -45,61 +61,118 @@ onMounted(load)
 
 <template>
   <main class="home">
-    <header class="home__bar">
-      <div class="home__heading">
-        <span class="home__mark" aria-hidden="true"></span>
-        <h1 class="home__title">我的课表</h1>
-      </div>
-
-      <div class="home__actions">
-        <button
-          v-if="weekOffset !== 0"
-          class="text-btn"
-          type="button"
-          @click="weekOffset = 0"
-        >
+    <MemberTopbar title="我的课表">
+      <template v-if="hasCourses" #actions>
+        <button v-if="weekOffset !== 0" class="text-btn" type="button" @click="weekOffset = 0">
           回到本周
         </button>
-
         <div class="stepper" role="group" aria-label="切换周次">
-          <button
-            class="stepper__btn"
-            type="button"
-            aria-label="上一周"
-            :disabled="!canPrev"
-            @click="weekOffset--"
-          >
+          <button class="stepper__btn" type="button" aria-label="上一周" :disabled="!canPrev" @click="weekOffset--">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="m15 18-6-6 6-6" />
             </svg>
           </button>
           <span class="stepper__label">第 {{ week }} 周</span>
-          <button
-            class="stepper__btn"
-            type="button"
-            aria-label="下一周"
-            :disabled="!canNext"
-            @click="weekOffset++"
-          >
+          <button class="stepper__btn" type="button" aria-label="下一周" :disabled="!canNext" @click="weekOffset++">
             <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
               <path d="m9 18 6-6-6-6" />
             </svg>
           </button>
         </div>
+      </template>
+    </MemberTopbar>
 
-        <button class="text-btn" type="button" @click="logout">退出登录</button>
+    <section v-if="loading" class="panel skeleton" aria-busy="true" aria-label="课表加载中">
+      <div class="skeleton__bar skeleton__bar--head"></div>
+      <div class="skeleton__grid">
+        <div v-for="i in 14" :key="i" class="skeleton__cell"></div>
       </div>
-    </header>
+    </section>
 
-    <p v-if="errorMessage" class="home__error" role="alert">
-      {{ errorMessage }}
-      <button class="text-btn" type="button" @click="load">重试</button>
-    </p>
+    <section v-else-if="errorMessage" class="panel">
+      <EmptyState title="课表加载失败" :description="errorMessage">
+        <template #icon>
+          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 7.5v5.5M12 16.5h.01" />
+          </svg>
+        </template>
+        <button class="btn btn--sm" type="button" @click="load">重新加载</button>
+      </EmptyState>
+    </section>
 
-    <div class="home__body" :class="{ 'is-loading': loading }">
+    <template v-else-if="hasCourses">
+      <section class="panel summary">
+        <div class="summary__main">
+          <StatusTag :status="status" />
+          <span class="summary__text">
+            <template v-if="status === SCHEDULE_STATUS.REPARSE">
+              新课表已提交于 {{ formatDateTime(info.last_uploaded_at) }}
+            </template>
+            <template v-else>管理员已于 {{ formatDateTime(info.confirmed_at) }} 确认课表</template>
+          </span>
+        </div>
+        <div class="summary__side">
+          <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
+          <button class="btn btn--sm btn--secondary" type="button" :disabled="exhausted" @click="goUpload">
+            重新上传
+          </button>
+        </div>
+      </section>
+
+      <p v-if="status === SCHEDULE_STATUS.REPARSE" class="notice notice--warn">
+        <span class="notice__body">
+          你重新上传的课表正在等待管理员重新解析。在处理完成前,下方仍显示之前生效的旧课表。
+        </span>
+      </p>
+      <p v-else-if="exhausted" class="notice notice--info">
+        <span class="notice__body">上传次数已用完。如果课表有变动,请联系管理员帮你修改。</span>
+      </p>
+
       <ScheduleTable :courses="visibleCourses" :monday="monday" :week="week" />
-      <p v-if="loading" class="home__loading">加载中…</p>
-    </div>
+    </template>
+
+    <section v-else-if="status === SCHEDULE_STATUS.NONE" class="panel">
+      <EmptyState
+        title="你还没有上传课表"
+        description="上传一张课表截图,管理员会帮你解析成可查看的课表。每人最多可上传 3 次。"
+      >
+        <button class="btn btn--sm" type="button" @click="goUpload">上传课表</button>
+      </EmptyState>
+    </section>
+
+    <section v-else class="panel pending">
+      <div class="pending__image">
+        <img :src="info.latest_image" alt="已上传的课表图片" />
+      </div>
+      <div class="pending__body">
+        <StatusTag :status="status" />
+        <h2 class="pending__title">课表已提交,等待管理员解析</h2>
+        <p class="pending__desc">
+          提交于 {{ formatDateTime(info.last_uploaded_at) }}。管理员确认后,课表会自动显示在这里。
+        </p>
+
+        <ol class="steps">
+          <li
+            v-for="(label, i) in STEPS"
+            :key="label"
+            class="steps__item"
+            :class="{ 'is-done': i + 1 < currentStep, 'is-current': i + 1 === currentStep }"
+          >
+            <span class="steps__index">{{ i + 1 }}</span>
+            {{ label }}
+          </li>
+        </ol>
+
+        <div class="pending__foot">
+          <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
+          <button class="btn btn--sm btn--secondary" type="button" :disabled="exhausted" @click="goUpload">
+            重新上传
+          </button>
+        </div>
+        <p v-if="exhausted" class="notice notice--info">上传次数已用完,如需修改请联系管理员。</p>
+      </div>
+    </section>
   </main>
 </template>
 
@@ -110,40 +183,9 @@ onMounted(load)
   padding: 28px 20px 48px;
 }
 
-.home__bar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-  margin-bottom: 20px;
-}
-
-.home__heading {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.home__mark {
-  width: 20px;
-  height: 20px;
-  border-radius: 50%;
-  background: var(--color-accent);
-}
-
-.home__title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 24px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-}
-
-.home__actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+.home > .panel,
+.home > .notice {
+  margin-bottom: 16px;
 }
 
 .stepper {
@@ -191,69 +233,179 @@ onMounted(load)
   font-variant-numeric: tabular-nums;
 }
 
-.text-btn {
-  padding: 4px 2px;
-  background: none;
-  border: 0;
-  color: var(--color-text-muted);
-  font-size: 14px;
-  cursor: pointer;
-  transition: color 0.15s ease;
-}
-
-.text-btn:hover {
-  color: var(--color-accent);
-}
-
-.text-btn:focus-visible {
-  outline: none;
-  border-radius: 4px;
-  box-shadow: 0 0 0 3px var(--color-focus-ring);
-}
-
-.home__error {
+.summary {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  margin: 0 0 16px;
-  padding: 9px 12px;
-  font-size: 13px;
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 14px 20px;
+}
+
+.summary__main,
+.summary__side {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.summary__side {
+  gap: 18px;
+}
+
+.summary__text {
+  font-size: 14px;
+  color: var(--color-text-muted);
+}
+
+.pending {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  gap: 28px;
+  padding: 24px;
+}
+
+.pending__image {
+  height: 300px;
+  overflow: hidden;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
 }
 
-.home__body {
-  position: relative;
+.pending__image img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: top;
 }
 
-.home__body.is-loading :deep(.course) {
-  opacity: 0.4;
+.pending__body {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
 }
 
-.home__loading {
-  position: absolute;
-  top: 70px;
-  left: 50%;
-  transform: translateX(-50%);
-  margin: 0;
-  padding: 6px 14px;
-  font-size: 13px;
+.pending__title {
+  margin: 12px 0 0;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 500;
+}
+
+.pending__desc {
+  margin: 8px 0 0;
   color: var(--color-text-muted);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  z-index: 2;
 }
 
-@media (max-width: 640px) {
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin: 22px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.steps__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  color: var(--color-text-faint);
+}
+
+.steps__index {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  font-size: 12px;
+  border: 1px solid var(--color-border-strong);
+  border-radius: 50%;
+}
+
+.steps__item.is-done {
+  color: var(--color-text-muted);
+}
+
+.steps__item.is-done .steps__index {
+  background: var(--color-text-muted);
+  border-color: var(--color-text-muted);
+  color: #fff;
+}
+
+.steps__item.is-current {
+  color: var(--color-text);
+  font-weight: 500;
+}
+
+.steps__item.is-current .steps__index {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.pending__foot {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 18px;
+  margin-top: auto;
+  padding-top: 24px;
+}
+
+.pending .notice {
+  margin-top: 14px;
+}
+
+.skeleton {
+  padding: 20px;
+}
+
+.skeleton__bar,
+.skeleton__cell {
+  background: var(--color-bg);
+  border-radius: var(--radius-md);
+  animation: pulse 1.3s ease-in-out infinite;
+}
+
+.skeleton__bar--head {
+  height: 36px;
+  margin-bottom: 14px;
+}
+
+.skeleton__grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 10px;
+}
+
+.skeleton__cell {
+  height: 74px;
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+@media (max-width: 720px) {
   .home {
     padding: 20px 12px 32px;
   }
 
-  .home__actions {
-    width: 100%;
-    justify-content: space-between;
+  .pending {
+    grid-template-columns: 1fr;
+  }
+
+  .pending__image {
+    height: 200px;
   }
 }
 </style>

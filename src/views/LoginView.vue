@@ -4,9 +4,11 @@ import { RouterLink, useRoute, useRouter } from 'vue-router'
 import PasswordField from '@/components/PasswordField.vue'
 import { login } from '@/api/auth'
 import { setToken } from '@/utils/auth'
+import { useUserStore } from '@/stores/user'
 
 const route = useRoute()
 const router = useRouter()
+const userStore = useUserStore()
 
 const form = reactive({
   username: '',
@@ -17,10 +19,12 @@ const form = reactive({
 const loading = ref(false)
 const errorMessage = ref('')
 const registered = ref(route.query.registered === '1')
+const expired = ref(route.query.expired === '1')
 
 watch(form, () => {
   errorMessage.value = ''
   registered.value = false
+  expired.value = false
 })
 
 function validate() {
@@ -48,6 +52,7 @@ async function handleSubmit() {
       username: form.username.trim(),
       password: form.password,
     })
+    userStore.reset()
     setToken(token, form.remember)
     await router.replace(getRedirectTarget())
   } catch (err) {
@@ -69,6 +74,7 @@ async function handleSubmit() {
 
       <form class="auth__form" novalidate @submit.prevent="handleSubmit">
         <p v-if="registered" class="auth__notice" role="status">注册成功,请登录</p>
+        <p v-if="expired" class="auth__notice" role="status">登录状态已失效,请重新登录</p>
 
         <div class="field">
           <label class="field__label" for="username">账号</label>
