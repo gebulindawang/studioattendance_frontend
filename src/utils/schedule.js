@@ -16,9 +16,30 @@ export const SECTIONS = [
 
 export const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
 
+export const MAX_WEEK = 25
+
 export const WEEK_TYPE = { EVERY: 0, ODD: 1, EVEN: 2 }
 
-export const MAX_WEEK = 25
+export const WEEK_TYPE_LABELS = { 0: '每周', 1: '单周', 2: '双周' }
+
+export function validateCourse(course) {
+  const errors = {}
+  if (!course.course_name || !course.course_name.trim()) {
+    errors.course_name = '请填写课程名称'
+  }
+  if (course.start_section > course.end_section) {
+    errors.sections = '开始节次不能晚于结束节次'
+  }
+  const { start_week: s, end_week: e } = course
+  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 1 || e < 1 || s > MAX_WEEK || e > MAX_WEEK) {
+    errors.weeks = `周数需为 1–${MAX_WEEK} 的整数`
+  } else if (s > e) {
+    errors.weeks = '起始周不能晚于结束周'
+  }
+  return errors
+}
+
+
 
 // TODO: 学期开始日期应由后端提供
 export const SEMESTER_START = new Date(2026, 7, 31)

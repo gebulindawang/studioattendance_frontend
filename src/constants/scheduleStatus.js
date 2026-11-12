@@ -1,0 +1,29 @@
+export const SCHEDULE_STATUS = {
+  NONE: 'none',
+  PENDING: 'pending',
+  REPARSE: 'reparse',
+  CONFIRMED: 'confirmed',
+}
+
+export const SCHEDULE_STATUS_LABELS = {
+  [SCHEDULE_STATUS.NONE]: '未上传',
+  [SCHEDULE_STATUS.PENDING]: '待解析',
+  [SCHEDULE_STATUS.REPARSE]: '待重新解析',
+  [SCHEDULE_STATUS.CONFIRMED]: '已生效',
+}
+
+export const SCHEDULE_STATUS_TONES = {
+  [SCHEDULE_STATUS.NONE]: 'muted',
+  [SCHEDULE_STATUS.PENDING]: 'warn',
+  [SCHEDULE_STATUS.REPARSE]: 'accent',
+  [SCHEDULE_STATUS.CONFIRMED]: 'ok',
+}
+
+export const SCHEDULE_STATUS_ORDER = {
+  [SCHEDULE_STATUS.REPARSE]: 0,
+  [SCHEDULE_STATUS.PENDING]: 1,
+  [SCHEDULE_STATUS.NONE]: 2,
+  [SCHEDULE_STATUS.CONFIRMED]: 3,
+}
+
+export const MAX_UPLOADS = 3

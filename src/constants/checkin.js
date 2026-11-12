@@ -1,0 +1,28 @@
+export const CHECKIN_STATUS = {
+  NORMAL: 1,
+  LATE: 2,
+  ABSENT: 3,
+  LEAVE: 4,
+  EXEMPTED: 5,
+}
+
+export const CHECKIN_LABELS = {
+  [CHECKIN_STATUS.NORMAL]: '正常',
+  [CHECKIN_STATUS.LATE]: '迟到',
+  [CHECKIN_STATUS.ABSENT]: '缺勤',
+  [CHECKIN_STATUS.LEAVE]: '请假',
+  [CHECKIN_STATUS.EXEMPTED]: '有课豁免',
+}
+
+export const CHECKIN_TONES = {
+  [CHECKIN_STATUS.NORMAL]: 'ok',
+  [CHECKIN_STATUS.LATE]: 'warn',
+  [CHECKIN_STATUS.ABSENT]: 'danger',
+  [CHECKIN_STATUS.LEAVE]: 'info',
+  [CHECKIN_STATUS.EXEMPTED]: 'muted',
+}
+
+export const USER_STATUS = {
+  DISABLED: 0,
+  ACTIVE: 1,
+}
