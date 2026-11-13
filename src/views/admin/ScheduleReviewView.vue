@@ -81,7 +81,7 @@ function needsCheck(c) {
 }
 
 function toDraft(c) {
-  return { ...c, teacher: c.teacher || '', _k: ++keyCounter, _touched: false }
+  return { ...c, _k: ++keyCounter, _touched: false }
 }
 
 function touch(c) {
@@ -175,7 +175,6 @@ function discard() {
 function addCourse() {
   draft.value.push({
     course_name: '',
-    teacher: '',
     location: '',
     weekday: 1,
     start_section: 1,
@@ -201,7 +200,6 @@ async function save() {
   try {
     const payload = draft.value.map((c) => ({
       course_name: c.course_name,
-      teacher: c.teacher,
       location: c.location,
       weekday: c.weekday,
       start_section: c.start_section,
@@ -340,7 +338,7 @@ onBeforeUnmount(() => {
               <span class="spinner" aria-hidden="true"></span>
               AI 正在解析课表图片…
             </p>
-            <p class="flow__hint">解析通常需要十几秒,期间可以离开本页,回来后会自动接上进度。</p>
+            <p class="flow__hint">AI 解析通常需要十几秒,请稍候…</p>
           </template>
 
           <template v-else-if="phase === 'failed'">
@@ -413,7 +411,6 @@ onBeforeUnmount(() => {
               <tr>
                 <th>#</th>
                 <th>课程名称</th>
-                <th>教师</th>
                 <th>上课地点</th>
                 <th>星期</th>
                 <th>节次</th>
@@ -424,7 +421,7 @@ onBeforeUnmount(() => {
             </thead>
             <tbody>
               <tr v-if="draft.length === 0">
-                <td class="table__empty" colspan="9">暂无课程,请点击下方“添加课程”</td>
+                <td class="table__empty" colspan="8">暂无课程,请点击下方“添加课程”</td>
               </tr>
               <template v-for="(c, i) in draft" :key="c._k">
                 <tr :class="{ 'is-flag': needsCheck(c), 'is-invalid': Object.keys(rowErrors[i]).length }">
@@ -440,9 +437,6 @@ onBeforeUnmount(() => {
                       @input="touch(c)"
                     />
                     <span v-if="needsCheck(c)" class="flag">待核对 · 置信度 {{ Math.round(c.confidence * 100) }}%</span>
-                  </td>
-                  <td>
-                    <input v-model="c.teacher" class="control cell" type="text" placeholder="教师" aria-label="教师" @input="touch(c)" />
                   </td>
                   <td class="col-loc">
                     <input v-model="c.location" class="control cell" type="text" placeholder="未识别到地点" aria-label="上课地点" @input="touch(c)" />
@@ -481,7 +475,7 @@ onBeforeUnmount(() => {
                 </tr>
                 <tr v-if="Object.keys(rowErrors[i]).length" class="err-row">
                   <td></td>
-                  <td colspan="8">第 {{ i + 1 }} 条:{{ Object.values(rowErrors[i]).join(';') }}</td>
+                  <td colspan="7">第 {{ i + 1 }} 条:{{ Object.values(rowErrors[i]).join(';') }}</td>
                 </tr>
               </template>
             </tbody>

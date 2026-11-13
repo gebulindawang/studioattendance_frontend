@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import MemberTopbar from '@/components/MemberTopbar.vue'
 import ScheduleTable from '@/components/ScheduleTable.vue'
@@ -7,10 +7,19 @@ import EmptyState from '@/components/EmptyState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import UploadMeter from '@/components/UploadMeter.vue'
 import { getMySchedule, getMyUploadCount } from '@/api/schedule'
+import { checkIn } from '@/api/checkin'
 import { useUserStore } from '@/stores/user'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
 import { formatDateTime } from '@/utils/format'
-import { MAX_WEEK, addDays, getMonday, getWeekNumber, isCourseInWeek } from '@/utils/schedule'
+import {
+  MAX_WEEK,
+  SECTIONS,
+  WEEKDAY_LABELS,
+  addDays,
+  getMonday,
+  getWeekNumber,
+  isCourseInWeek,
+} from '@/utils/schedule'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -36,6 +45,64 @@ const visibleCourses = computed(() =>
 const STEPS = ['提交课表', '管理员解析', '课表生效']
 const currentStep = computed(() => (status.value === SCHEDULE_STATUS.CONFIRMED ? 3 : 2))
 
+// 今日签到:固定按"今天"的真实周次与星期计算,不受周切换浏览影响
+const todayWeek = getWeekNumber(currentMonday)
+const todayWeekday = computed(() => {
+  const d = new Date().getDay()
+  return d === 0 ? 7 : d
+})
+const todayLabel = computed(
+  () => `${new Date().getMonth() + 1} 月 ${new Date().getDate()} 日 周${WEEKDAY_LABELS[todayWeekday.value - 1]}`,
+)
+
+const now = ref(Date.now())
+const signingSection = ref(null)
+const checkinError = ref('')
+const signedSections = ref([])
+let clockTimer = null
+
+// 今天要上的课按开始节次去重,一门课只在它的第一节签到
+const todaySections = computed(() => {
+  const seen = new Map()
+  ;(info.value?.courses ?? [])
+    .filter((c) => c.weekday === todayWeekday.value && isCourseInWeek(c, todayWeek))
+    .forEach((c) => {
+      if (!seen.has(c.start_section)) seen.set(c.start_section, c)
+    })
+  return Array.from(seen, ([section, c]) => ({
+    section,
+    endSection: c.end_section,
+    courseName: c.course_name,
+  }))
+})
+
+// 与后端窗口一致:开课前 20 分钟可签,开课后 5 分钟截止
+function sectionState(section) {
+  const conf = SECTIONS[section - 1]
+  if (!conf) return 'over'
+  const [h, m] = conf.start.split(':').map(Number)
+  const start = new Date()
+  start.setHours(h, m, 0, 0)
+  const diff = now.value - start.getTime()
+  if (diff < -20 * 60000) return 'upcoming'
+  if (diff <= 5 * 60000) return 'open'
+  return 'over'
+}
+
+async function sign(item) {
+  if (signingSection.value) return
+  signingSection.value = item.section
+  checkinError.value = ''
+  try {
+    await checkIn(userStore.profile.id, item.section, todayWeek)
+    signedSections.value.push(item.section)
+  } catch (err) {
+    checkinError.value = err?.message || '签到失败,请稍后重试'
+  } finally {
+    signingSection.value = null
+  }
+}
+
 async function load() {
   loading.value = true
   errorMessage.value = ''
@@ -56,7 +123,14 @@ function goUpload() {
   router.push({ name: 'upload' })
 }
 
-onMounted(load)
+onMounted(() => {
+  load()
+  clockTimer = setInterval(() => {
+    now.value = Date.now()
+  }, 30000)
+})
+
+onBeforeUnmount(() => clearInterval(clockTimer))
 </script>
 
 <template>
@@ -118,6 +192,41 @@ onMounted(load)
             重新上传
           </button>
         </div>
+      </section>
+
+      <section v-if="todaySections.length" class="panel checkin">
+        <header class="panel__head">
+          <h2 class="panel__title">今日签到</h2>
+          <span class="panel__hint">{{ todayLabel }}</span>
+        </header>
+        <p v-if="checkinError" class="notice notice--danger checkin__error" role="alert">
+          <span class="notice__body">{{ checkinError }}</span>
+        </p>
+        <ul class="checkin__list">
+          <li v-for="item in todaySections" :key="item.section" class="checkin__item">
+            <div class="checkin__info">
+              <p class="checkin__course">{{ item.courseName }}</p>
+              <p class="checkin__meta">
+                第 {{ item.section }}{{ item.endSection > item.section ? `-${item.endSection}` : '' }} 节
+                · {{ SECTIONS[item.section - 1]?.start }}
+              </p>
+            </div>
+            <button
+              v-if="!signedSections.includes(item.section) && sectionState(item.section) === 'open'"
+              class="btn btn--sm"
+              type="button"
+              :disabled="signingSection === item.section"
+              @click="sign(item)"
+            >
+              <span v-if="signingSection === item.section" class="btn__spinner" aria-hidden="true"></span>
+              {{ signingSection === item.section ? '签到中…' : '签到' }}
+            </button>
+            <span v-else-if="signedSections.includes(item.section)" class="tag tag--ok">已签到</span>
+            <span v-else class="checkin__state">
+              {{ sectionState(item.section) === 'upcoming' ? '未开始' : '已结束' }}
+            </span>
+          </li>
+        </ul>
       </section>
 
       <p v-if="status === SCHEDULE_STATUS.REPARSE" class="notice notice--warn">
@@ -257,6 +366,52 @@ onMounted(load)
 .summary__text {
   font-size: 14px;
   color: var(--color-text-muted);
+}
+
+.checkin__list {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.checkin__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px 20px;
+}
+
+.checkin__item + .checkin__item {
+  border-top: 1px solid var(--color-border);
+}
+
+.checkin__info {
+  min-width: 0;
+}
+
+.checkin__course {
+  margin: 0;
+  font-weight: 500;
+}
+
+.checkin__meta {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--color-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.checkin__state {
+  font-size: 13px;
+  color: var(--color-text-faint);
+}
+
+.checkin__error {
+  margin: 0 20px 12px;
 }
 
 .pending {

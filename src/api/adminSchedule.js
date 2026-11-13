@@ -18,11 +18,10 @@ function parseUserId(key) {
   return id
 }
 
-// 后端课程对象没有 teacher 字段(schedules 表暂无该列),教师列前端可补填但提交后不会持久化
+// 后端课程对象没有 teacher 字段(schedules 表暂无该列),解析结果不含教师信息
 function normalizeCourse(c) {
   return {
     course_name: c.course_name ?? '',
-    teacher: '',
     location: c.location ?? '',
     weekday: Number(c.weekday),
     start_section: Number(c.start_section),
