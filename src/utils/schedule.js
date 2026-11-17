@@ -1,28 +1,14 @@
-export const SECTIONS = [
-  { index: 1, start: '08:00', end: '08:45' },
-  { index: 2, start: '08:55', end: '09:40' },
-  { index: 3, start: '10:00', end: '10:40' },
-  { index: 4, start: '10:50', end: '11:40' },
-  { index: 5, start: '13:00', end: '13:45' },
-  { index: 6, start: '13:55', end: '14:40' },
-  { index: 7, start: '15:00', end: '15:45' },
-  { index: 8, start: '15:55', end: '16:40' },
-  { index: 9, start: '16:55', end: '17:40' },
-  { index: 10, start: '17:50', end: '18:35' },
-  { index: 11, start: '19:10', end: '19:55' },
-  { index: 12, start: '20:00', end: '20:45' },
-  { index: 13, start: '20:50', end: '21:35' },
-]
-
 export const WEEKDAY_LABELS = ['一', '二', '三', '四', '五', '六', '日']
-
-export const MAX_WEEK = 25
 
 export const WEEK_TYPE = { EVERY: 0, ODD: 1, EVEN: 2 }
 
 export const WEEK_TYPE_LABELS = { 0: '每周', 1: '单周', 2: '双周' }
 
-export function validateCourse(course) {
+// 节次时间(SECTIONS)、周数上限(MAX_WEEK)、学期开始日期(SEMESTER_START)
+// 原先写死在本文件,现改为查询 GET /schedule/semester,见 stores/term.js。
+
+// maxWeek 来自后端 semester.TotalWeeks
+export function validateCourse(course, maxWeek) {
   const errors = {}
   if (!course.course_name || !course.course_name.trim()) {
     errors.course_name = '请填写课程名称'
@@ -31,18 +17,13 @@ export function validateCourse(course) {
     errors.sections = '开始节次不能晚于结束节次'
   }
   const { start_week: s, end_week: e } = course
-  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 1 || e < 1 || s > MAX_WEEK || e > MAX_WEEK) {
-    errors.weeks = `周数需为 1–${MAX_WEEK} 的整数`
+  if (!Number.isInteger(s) || !Number.isInteger(e) || s < 1 || e < 1 || s > maxWeek || e > maxWeek) {
+    errors.weeks = `周数需为 1–${maxWeek} 的整数`
   } else if (s > e) {
     errors.weeks = '起始周不能晚于结束周'
   }
   return errors
 }
-
-
-
-// TODO: 学期开始日期应由后端提供
-export const SEMESTER_START = new Date(2026, 7, 31)
 
 const DAY_MS = 24 * 60 * 60 * 1000
 
@@ -72,8 +53,10 @@ export function formatMonthDay(date) {
   return `${m}-${d}`
 }
 
-export function getWeekNumber(date) {
-  const diff = getMonday(date) - getMonday(SEMESTER_START)
+// semesterStart 来自后端 semester.StartDate,未就绪时按第 1 周处理
+export function getWeekNumber(date, semesterStart) {
+  if (!semesterStart) return 1
+  const diff = getMonday(date) - getMonday(semesterStart)
   return Math.round(diff / (7 * DAY_MS)) + 1
 }
 

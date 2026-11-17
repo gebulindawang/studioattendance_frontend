@@ -12,11 +12,9 @@ import {
   startScheduleParse,
 } from '@/api/adminSchedule'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
+import { useTermStore } from '@/stores/term'
 import { formatDateTime } from '@/utils/format'
 import {
-  MAX_WEEK,
-  SECTIONS,
-  SEMESTER_START,
   WEEKDAY_LABELS,
   WEEK_TYPE_LABELS,
   addDays,
@@ -29,6 +27,7 @@ import {
 const LOW_CONFIDENCE = 0.8
 
 const route = useRoute()
+const term = useTermStore()
 const userKey = route.params.key
 
 const detail = ref(null)
@@ -47,14 +46,14 @@ const savedNow = ref(false)
 const uploadIndex = ref(0)
 const lightbox = ref(false)
 
-const previewWeek = ref(Math.min(Math.max(getWeekNumber(new Date()), 1), MAX_WEEK))
+const previewWeek = ref(1)
 
 let keyCounter = 0
 let alive = true
 
 const uploads = computed(() => detail.value?.uploads ?? [])
 const currentUpload = computed(() => uploads.value[uploadIndex.value])
-const rowErrors = computed(() => draft.value.map(validateCourse))
+const rowErrors = computed(() => draft.value.map((c) => validateCourse(c, term.maxWeek)))
 const errorCount = computed(() => rowErrors.value.filter((e) => Object.keys(e).length > 0).length)
 const lowCount = computed(() => draft.value.filter(needsCheck).length)
 const canConfirm = computed(
@@ -62,9 +61,10 @@ const canConfirm = computed(
 )
 const hasEffective = computed(() => (detail.value?.courses.length ?? 0) > 0)
 
-const previewMonday = computed(() =>
-  addDays(getMonday(SEMESTER_START), (previewWeek.value - 1) * 7),
-)
+const previewMonday = computed(() => {
+  const start = term.semesterStart ?? new Date()
+  return addDays(getMonday(start), (previewWeek.value - 1) * 7)
+})
 
 const previewCourses = computed(() => {
   const source =
@@ -96,8 +96,11 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    detail.value = await getScheduleUserDetail(userKey)
+    // 节次行与周数上限来自后端学期配置,先确保就绪再渲染校对表
+    const [, userDetail] = await Promise.all([term.ensureLoaded(), getScheduleUserDetail(userKey)])
+    detail.value = userDetail
     uploadIndex.value = Math.max(detail.value.uploads.length - 1, 0)
+    previewWeek.value = Math.min(Math.max(getWeekNumber(new Date(), term.semesterStart), 1), term.maxWeek || 1)
     initPhase()
     restoreParse()
   } catch (err) {
@@ -180,7 +183,7 @@ function addCourse() {
     start_section: 1,
     end_section: 2,
     start_week: 1,
-    end_week: 16,
+    end_week: term.maxWeek || 1,
     week_type: 0,
     _k: ++keyCounter,
     _touched: true,
@@ -391,14 +394,14 @@ onBeforeUnmount(() => {
           <label v-if="phase === 'saved' || viewMode === 'preview'" class="week-pick">
             预览周次
             <select v-model.number="previewWeek" class="control">
-              <option v-for="w in MAX_WEEK" :key="w" :value="w">第 {{ w }} 周</option>
+              <option v-for="w in term.maxWeek" :key="w" :value="w">第 {{ w }} 周</option>
             </select>
           </label>
         </div>
       </header>
 
       <div v-if="phase === 'saved' || viewMode === 'preview'" class="courses__preview">
-        <ScheduleTable :courses="previewCourses" :monday="previewMonday" :week="previewWeek" />
+        <ScheduleTable :courses="previewCourses" :sections="term.sections" :monday="previewMonday" :week="previewWeek" />
         <p v-if="phase === 'review' && errorCount > 0" class="flow__hint">
           预览中不包含信息不合法的课程,请先在“校对”里修正。
         </p>
@@ -449,19 +452,19 @@ onBeforeUnmount(() => {
                   <td>
                     <span class="range" :class="{ 'has-error': rowErrors[i].sections }">
                       <select v-model.number="c.start_section" class="control cell" aria-label="开始节次" @change="touch(c)">
-                        <option v-for="s in SECTIONS" :key="s.index" :value="s.index">{{ s.index }}</option>
+                        <option v-for="s in term.sections" :key="s.index" :value="s.index">{{ s.index }}</option>
                       </select>
                       <span class="range__sep">–</span>
                       <select v-model.number="c.end_section" class="control cell" aria-label="结束节次" @change="touch(c)">
-                        <option v-for="s in SECTIONS" :key="s.index" :value="s.index">{{ s.index }}</option>
+                        <option v-for="s in term.sections" :key="s.index" :value="s.index">{{ s.index }}</option>
                       </select>
                     </span>
                   </td>
                   <td>
                     <span class="range" :class="{ 'has-error': rowErrors[i].weeks }">
-                      <input v-model.number="c.start_week" class="control cell cell--num" type="number" min="1" :max="MAX_WEEK" aria-label="起始周" @input="touch(c)" />
+                      <input v-model.number="c.start_week" class="control cell cell--num" type="number" min="1" :max="term.maxWeek" aria-label="起始周" @input="touch(c)" />
                       <span class="range__sep">–</span>
-                      <input v-model.number="c.end_week" class="control cell cell--num" type="number" min="1" :max="MAX_WEEK" aria-label="结束周" @input="touch(c)" />
+                      <input v-model.number="c.end_week" class="control cell cell--num" type="number" min="1" :max="term.maxWeek" aria-label="结束周" @input="touch(c)" />
                     </span>
                   </td>
                   <td>

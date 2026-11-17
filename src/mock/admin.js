@@ -1,7 +1,13 @@
 import { CHECKIN_STATUS } from '@/constants/checkin'
-import { SECTIONS } from '@/utils/schedule'
 
 const pad = (n) => String(n).padStart(2, '0')
+
+// 演示数据专用的节次表:真实时间由 GET /schedule/semester 提供,
+// mock 模块在接口返回前就要算签到时刻,这里只求时间点看起来合理。
+const MOCK_SECTION_START = [
+  '08:00', '08:55', '10:00', '10:50', '13:00', '13:55', '15:00',
+  '15:55', '16:55', '17:50', '19:10', '20:00', '20:50',
+]
 
 function formatDate(date) {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`
@@ -41,7 +47,7 @@ function buildRecords() {
       let checkinTime = null
 
       if (status === CHECKIN_STATUS.NORMAL || status === CHECKIN_STATUS.LATE) {
-        const [h, m] = SECTIONS[section - 1].start.split(':').map(Number)
+        const [h, m] = MOCK_SECTION_START[section - 1].split(':').map(Number)
         const offset = status === CHECKIN_STATUS.NORMAL ? -(2 + ((i * 7 + d) % 6)) : 6 + ((i + d) % 9)
         const total = h * 60 + m + offset
         checkinTime = `${dateStr}T${pad(Math.floor(total / 60))}:${pad(total % 60)}:00`

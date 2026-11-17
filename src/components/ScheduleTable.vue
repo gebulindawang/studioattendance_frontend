@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from 'vue'
 import {
-  SECTIONS,
   WEEKDAY_LABELS,
   addDays,
   formatMonthDay,
@@ -11,11 +10,29 @@ import {
 
 const props = defineProps({
   courses: { type: Array, default: () => [] },
+  // 节次时间,来自 GET /schedule/semester,每项 { index, start, end }
+  sections: { type: Array, default: () => [] },
   monday: { type: Date, required: true },
   week: { type: Number, required: true },
 })
 
 const today = new Date()
+
+// 网格行以"第几节"为行号:配置里有时间的行显示时刻,课表用到但后端没配的行只占位。
+// 行数取两者的最大值,课程块就不会被挤到网格外。
+const rows = computed(() => {
+  const maxSection = props.courses.reduce((max, c) => Math.max(max, Number(c.end_section) || 0), 0)
+  const total = Math.max(props.sections.length, maxSection)
+  const byIndex = new Map(props.sections.map((s) => [s.index, s]))
+  return Array.from({ length: total }, (_, i) => {
+    const conf = byIndex.get(i + 1)
+    return { index: i + 1, start: conf?.start ?? '', end: conf?.end ?? '' }
+  })
+})
+
+const gridStyle = computed(() => ({
+  gridTemplateRows: `56px repeat(${rows.value.length}, var(--row-height))`,
+}))
 
 const days = computed(() =>
   WEEKDAY_LABELS.map((label, i) => {
@@ -48,7 +65,7 @@ const year = computed(() => props.monday.getFullYear())
 
 <template>
   <div class="schedule">
-    <div class="schedule__grid">
+    <div class="schedule__grid" :style="gridStyle">
       <div class="schedule__corner">
         <span class="schedule__year">{{ year }}</span>
         <span class="schedule__week">第 {{ week }} 周</span>
@@ -65,10 +82,10 @@ const year = computed(() => props.monday.getFullYear())
         <span class="schedule__day-date">{{ day.date }}</span>
       </div>
 
-      <template v-for="s in SECTIONS" :key="s.index">
+      <template v-for="s in rows" :key="s.index">
         <div
           class="schedule__time"
-          :class="{ 'is-pair-end': s.index % 2 === 0, 'is-last': s.index === SECTIONS.length }"
+          :class="{ 'is-pair-end': s.index % 2 === 0, 'is-last': s.index === rows.length }"
           :style="{ gridColumn: 1, gridRow: s.index + 1 }"
         >
           <span class="schedule__section">{{ s.index }}</span>
@@ -82,7 +99,7 @@ const year = computed(() => props.monday.getFullYear())
           class="schedule__cell"
           :class="{
             'is-pair-end': s.index % 2 === 0,
-            'is-last': s.index === SECTIONS.length,
+            'is-last': s.index === rows.length,
             'is-today': day.isToday,
           }"
           :style="{ gridColumn: i + 2, gridRow: s.index + 1 }"
@@ -116,6 +133,7 @@ const year = computed(() => props.monday.getFullYear())
   --row-height: 64px;
   display: grid;
   grid-template-columns: 64px repeat(7, minmax(96px, 1fr));
+  /* 行数取决于后端节次配置,由 gridStyle 内联覆盖 */
   grid-template-rows: 56px repeat(13, var(--row-height));
   min-width: 760px;
 }

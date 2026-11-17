@@ -9,11 +9,10 @@ import UploadMeter from '@/components/UploadMeter.vue'
 import { getMySchedule, getMyUploadCount } from '@/api/schedule'
 import { checkIn } from '@/api/checkin'
 import { useUserStore } from '@/stores/user'
+import { useTermStore } from '@/stores/term'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
 import { formatDateTime } from '@/utils/format'
 import {
-  MAX_WEEK,
-  SECTIONS,
   WEEKDAY_LABELS,
   addDays,
   getMonday,
@@ -23,6 +22,7 @@ import {
 
 const router = useRouter()
 const userStore = useUserStore()
+const term = useTermStore()
 
 const info = ref(null)
 const loading = ref(true)
@@ -31,9 +31,9 @@ const errorMessage = ref('')
 const currentMonday = getMonday(new Date())
 const weekOffset = ref(0)
 const monday = computed(() => addDays(currentMonday, weekOffset.value * 7))
-const week = computed(() => getWeekNumber(monday.value))
+const week = computed(() => getWeekNumber(monday.value, term.semesterStart))
 const canPrev = computed(() => week.value > 1)
-const canNext = computed(() => week.value < MAX_WEEK)
+const canNext = computed(() => week.value < term.maxWeek)
 
 const status = computed(() => info.value?.status ?? SCHEDULE_STATUS.NONE)
 const hasCourses = computed(() => (info.value?.courses.length ?? 0) > 0)
@@ -46,7 +46,7 @@ const STEPS = ['提交课表', '管理员解析', '课表生效']
 const currentStep = computed(() => (status.value === SCHEDULE_STATUS.CONFIRMED ? 3 : 2))
 
 // 今日签到:固定按"今天"的真实周次与星期计算,不受周切换浏览影响
-const todayWeek = getWeekNumber(currentMonday)
+const todayWeek = computed(() => getWeekNumber(currentMonday, term.semesterStart))
 const todayWeekday = computed(() => {
   const d = new Date().getDay()
   return d === 0 ? 7 : d
@@ -65,7 +65,7 @@ let clockTimer = null
 const todaySections = computed(() => {
   const seen = new Map()
   ;(info.value?.courses ?? [])
-    .filter((c) => c.weekday === todayWeekday.value && isCourseInWeek(c, todayWeek))
+    .filter((c) => c.weekday === todayWeekday.value && isCourseInWeek(c, todayWeek.value))
     .forEach((c) => {
       if (!seen.has(c.start_section)) seen.set(c.start_section, c)
     })
@@ -73,12 +73,14 @@ const todaySections = computed(() => {
     section,
     endSection: c.end_section,
     courseName: c.course_name,
+    startLabel: term.sectionStart(section),
   }))
 })
 
 // 与后端窗口一致:开课前 20 分钟可签,开课后 5 分钟截止
+// 上课时刻取自后端节次配置,没有配置的节次无法判断窗口
 function sectionState(section) {
-  const conf = SECTIONS[section - 1]
+  const conf = term.sectionAt(section)
   if (!conf) return 'over'
   const [h, m] = conf.start.split(':').map(Number)
   const start = new Date()
@@ -94,7 +96,7 @@ async function sign(item) {
   signingSection.value = item.section
   checkinError.value = ''
   try {
-    await checkIn(userStore.profile.id, item.section, todayWeek)
+    await checkIn(userStore.profile.id, item.section, todayWeek.value)
     signedSections.value.push(item.section)
   } catch (err) {
     checkinError.value = err?.message || '签到失败,请稍后重试'
@@ -107,7 +109,9 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    const [scheduleInfo, uploadCount] = await Promise.all([
+    // 学期/节次配置是网格渲染的前提,与课表数据并行取回
+    const [, scheduleInfo, uploadCount] = await Promise.all([
+      term.ensureLoaded(),
       getMySchedule(userStore.profile),
       getMyUploadCount(userStore.profile),
     ])
@@ -208,7 +212,7 @@ onBeforeUnmount(() => clearInterval(clockTimer))
               <p class="checkin__course">{{ item.courseName }}</p>
               <p class="checkin__meta">
                 第 {{ item.section }}{{ item.endSection > item.section ? `-${item.endSection}` : '' }} 节
-                · {{ SECTIONS[item.section - 1]?.start }}
+                · {{ item.startLabel }}
               </p>
             </div>
             <button
@@ -238,7 +242,7 @@ onBeforeUnmount(() => clearInterval(clockTimer))
         <span class="notice__body">上传次数已用完。如果课表有变动,请联系管理员帮你修改。</span>
       </p>
 
-      <ScheduleTable :courses="visibleCourses" :monday="monday" :week="week" />
+      <ScheduleTable :courses="visibleCourses" :sections="term.sections" :monday="monday" :week="week" />
     </template>
 
     <section v-else-if="status === SCHEDULE_STATUS.NONE" class="panel">

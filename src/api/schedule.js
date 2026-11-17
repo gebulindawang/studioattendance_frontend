@@ -8,6 +8,15 @@ function notImplemented(name) {
   return Promise.reject(new Error(`接口尚未实现:${name}`))
 }
 
+// 后端契约(2026-11-16 实测):GET /api/schedule/semester,Bearer token,
+// 返回 {code:0, data:{
+//   semester:{ ID, StartDate:"2026-08-31T00:00:00+08:00", EndDate, TotalWeeks },
+//   section_time:[{ ID, SectionNumber:"1", StartTime:"08:00:00", EndTime:"09:40:00" }] }}
+// 字段是 Go 结构体原名(无 json tag),SectionNumber 为字符串;解析统一在 stores/term.js。
+export function getSemesterConfig() {
+  return request.get('/schedule/semester')
+}
+
 export async function getMySchedule(user) {
   if (MOCK.mySchedule) {
     await sleep(500)
