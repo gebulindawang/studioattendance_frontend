@@ -6,14 +6,13 @@ import ScheduleTable from '@/components/ScheduleTable.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import UploadMeter from '@/components/UploadMeter.vue'
-import { getMySchedule, getMyUploadCount } from '@/api/schedule'
-import { checkIn } from '@/api/checkin'
-import { useUserStore } from '@/stores/user'
+import { getMySchedule } from '@/api/schedule'
+import { checkIn, getTodayAttendance } from '@/api/checkin'
+import { CHECKIN_LABELS, CHECKIN_TONES } from '@/constants/checkin'
 import { useTermStore } from '@/stores/term'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
 import { formatDateTime } from '@/utils/format'
 import {
-  WEEKDAY_LABELS,
   addDays,
   getMonday,
   getWeekNumber,
@@ -21,16 +20,25 @@ import {
 } from '@/utils/schedule'
 
 const router = useRouter()
-const userStore = useUserStore()
 const term = useTermStore()
 
 const info = ref(null)
 const loading = ref(true)
 const errorMessage = ref('')
 
-const currentMonday = getMonday(new Date())
+const attendance = ref(null)
+const currentMonday = computed(() => {
+  const date = attendance.value?.date
+  const today = date ? new Date(`${date}T00:00:00`) : new Date()
+  return getMonday(today)
+})
 const weekOffset = ref(0)
-const monday = computed(() => addDays(currentMonday, weekOffset.value * 7))
+const monday = computed(() => {
+  if (!term.semesterStart) return currentMonday.value
+  const currentWeek = getWeekNumber(currentMonday.value, term.semesterStart)
+  const initialWeek = Math.min(Math.max(currentWeek, 1), term.maxWeek)
+  return addDays(getMonday(term.semesterStart), (initialWeek - 1 + weekOffset.value) * 7)
+})
 const week = computed(() => getWeekNumber(monday.value, term.semesterStart))
 const canPrev = computed(() => week.value > 1)
 const canNext = computed(() => week.value < term.maxWeek)
@@ -45,50 +53,34 @@ const visibleCourses = computed(() =>
 const STEPS = ['提交课表', '管理员解析', '课表生效']
 const currentStep = computed(() => (status.value === SCHEDULE_STATUS.CONFIRMED ? 3 : 2))
 
-// 今日签到:固定按"今天"的真实周次与星期计算,不受周切换浏览影响
-const todayWeek = computed(() => getWeekNumber(currentMonday, term.semesterStart))
-const todayWeekday = computed(() => {
-  const d = new Date().getDay()
-  return d === 0 ? 7 : d
-})
-const todayLabel = computed(
-  () => `${new Date().getMonth() + 1} 月 ${new Date().getDate()} 日 周${WEEKDAY_LABELS[todayWeekday.value - 1]}`,
-)
-
 const now = ref(Date.now())
+const clockOffset = ref(0)
 const signingSection = ref(null)
 const checkinError = ref('')
-const signedSections = ref([])
+const checkinLoadError = ref('')
+let attendanceRequest = 0
 let clockTimer = null
+let refreshTimer = null
 
-// 今天要上的课按开始节次去重,一门课只在它的第一节签到
-const todaySections = computed(() => {
-  const seen = new Map()
-  ;(info.value?.courses ?? [])
-    .filter((c) => c.weekday === todayWeekday.value && isCourseInWeek(c, todayWeek.value))
-    .forEach((c) => {
-      if (!seen.has(c.start_section)) seen.set(c.start_section, c)
-    })
-  return Array.from(seen, ([section, c]) => ({
-    section,
-    endSection: c.end_section,
-    courseName: c.course_name,
-    startLabel: term.sectionStart(section),
-  }))
-})
+function sectionState(item) {
+  const serverTime = now.value + clockOffset.value
+  if (serverTime < Date.parse(item.opens_at)) return 'upcoming'
+  return serverTime <= Date.parse(item.closes_at) ? 'open' : 'over'
+}
 
-// 与后端窗口一致:开课前 20 分钟可签,开课后 5 分钟截止
-// 上课时刻取自后端节次配置,没有配置的节次无法判断窗口
-function sectionState(section) {
-  const conf = term.sectionAt(section)
-  if (!conf) return 'over'
-  const [h, m] = conf.start.split(':').map(Number)
-  const start = new Date()
-  start.setHours(h, m, 0, 0)
-  const diff = now.value - start.getTime()
-  if (diff < -20 * 60000) return 'upcoming'
-  if (diff <= 5 * 60000) return 'open'
-  return 'over'
+async function loadAttendance() {
+  const requestId = ++attendanceRequest
+  try {
+    const result = await getTodayAttendance()
+    if (requestId !== attendanceRequest) return
+    attendance.value = result
+    now.value = Date.now()
+    clockOffset.value = Date.parse(result.now) - now.value
+    checkinLoadError.value = ''
+  } catch (err) {
+    if (requestId !== attendanceRequest) return
+    checkinLoadError.value = err?.message || '签到状态加载失败'
+  }
 }
 
 async function sign(item) {
@@ -96,12 +88,13 @@ async function sign(item) {
   signingSection.value = item.section
   checkinError.value = ''
   try {
-    await checkIn(userStore.profile.id, item.section, todayWeek.value)
-    signedSections.value.push(item.section)
+    const record = await checkIn(item.section)
+    item.status = record.status
   } catch (err) {
     checkinError.value = err?.message || '签到失败,请稍后重试'
   } finally {
     signingSection.value = null
+    await loadAttendance()
   }
 }
 
@@ -109,13 +102,8 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    // 学期/节次配置是网格渲染的前提,与课表数据并行取回
-    const [, scheduleInfo, uploadCount] = await Promise.all([
-      term.ensureLoaded(),
-      getMySchedule(userStore.profile),
-      getMyUploadCount(userStore.profile),
-    ])
-    info.value = { ...scheduleInfo, upload_count: uploadCount }
+    const [, scheduleInfo] = await Promise.all([term.reload(), getMySchedule(), loadAttendance()])
+    info.value = scheduleInfo
   } catch (err) {
     errorMessage.value = err?.message || '课表加载失败,请稍后重试'
   } finally {
@@ -131,16 +119,23 @@ onMounted(() => {
   load()
   clockTimer = setInterval(() => {
     now.value = Date.now()
+  }, 1000)
+  refreshTimer = setInterval(() => {
+    if (!loading.value && !signingSection.value) loadAttendance()
   }, 30000)
 })
 
-onBeforeUnmount(() => clearInterval(clockTimer))
+onBeforeUnmount(() => {
+  ++attendanceRequest
+  clearInterval(clockTimer)
+  clearInterval(refreshTimer)
+})
 </script>
 
 <template>
   <main class="home">
     <MemberTopbar title="我的课表">
-      <template v-if="hasCourses" #actions>
+      <template v-if="hasCourses && term.ready" #actions>
         <button v-if="weekOffset !== 0" class="text-btn" type="button" @click="weekOffset = 0">
           回到本周
         </button>
@@ -185,7 +180,7 @@ onBeforeUnmount(() => clearInterval(clockTimer))
           <StatusTag :status="status" />
           <span class="summary__text">
             <template v-if="status === SCHEDULE_STATUS.REPARSE">
-              新课表已提交于 {{ formatDateTime(info.last_uploaded_at) }}
+              新课表已提交<span v-if="info.last_uploaded_at">于 {{ formatDateTime(info.last_uploaded_at) }}</span>
             </template>
             <template v-else>管理员已于 {{ formatDateTime(info.confirmed_at) }} 确认课表</template>
           </span>
@@ -198,36 +193,38 @@ onBeforeUnmount(() => clearInterval(clockTimer))
         </div>
       </section>
 
-      <section v-if="todaySections.length" class="panel checkin">
+      <section class="panel checkin">
         <header class="panel__head">
           <h2 class="panel__title">今日签到</h2>
-          <span class="panel__hint">{{ todayLabel }}</span>
+          <span class="panel__hint">{{ attendance?.date }}</span>
         </header>
-        <p v-if="checkinError" class="notice notice--danger checkin__error" role="alert">
-          <span class="notice__body">{{ checkinError }}</span>
+        <p v-if="checkinError || checkinLoadError" class="notice notice--danger checkin__error" role="alert">
+          <span class="notice__body">{{ checkinError || checkinLoadError }}</span>
         </p>
-        <ul class="checkin__list">
-          <li v-for="item in todaySections" :key="item.section" class="checkin__item">
+        <p v-if="attendance && !attendance.sections.length" class="checkin__error">今日暂无签到安排。</p>
+        <ul v-else-if="attendance" class="checkin__list">
+          <li v-for="item in attendance.sections" :key="item.section" class="checkin__item">
             <div class="checkin__info">
-              <p class="checkin__course">{{ item.courseName }}</p>
+              <p class="checkin__course">{{ item.course_name || '工作室考勤' }}</p>
               <p class="checkin__meta">
-                第 {{ item.section }}{{ item.endSection > item.section ? `-${item.endSection}` : '' }} 节
-                · {{ item.startLabel }}
+                第 {{ item.section }} 节 · {{ item.start_time.slice(11, 16) }}
               </p>
             </div>
             <button
-              v-if="!signedSections.includes(item.section) && sectionState(item.section) === 'open'"
+              v-if="!item.status && sectionState(item) === 'open'"
               class="btn btn--sm"
               type="button"
-              :disabled="signingSection === item.section"
+              :disabled="signingSection !== null"
               @click="sign(item)"
             >
               <span v-if="signingSection === item.section" class="btn__spinner" aria-hidden="true"></span>
               {{ signingSection === item.section ? '签到中…' : '签到' }}
             </button>
-            <span v-else-if="signedSections.includes(item.section)" class="tag tag--ok">已签到</span>
+            <span v-else-if="item.status" class="tag" :class="`tag--${CHECKIN_TONES[item.status] || 'muted'}`">
+              {{ CHECKIN_LABELS[item.status] || '已记录' }}
+            </span>
             <span v-else class="checkin__state">
-              {{ sectionState(item.section) === 'upcoming' ? '未开始' : '已结束' }}
+              {{ sectionState(item) === 'upcoming' ? '未开始' : '已结束' }}
             </span>
           </li>
         </ul>
@@ -235,20 +232,21 @@ onBeforeUnmount(() => clearInterval(clockTimer))
 
       <p v-if="status === SCHEDULE_STATUS.REPARSE" class="notice notice--warn">
         <span class="notice__body">
-          你重新上传的课表正在等待管理员重新解析。在处理完成前,下方仍显示之前生效的旧课表。
+          管理员正在等待处理新课表。当前课表和签到规则会沿用已生效的版本。
         </span>
       </p>
       <p v-else-if="exhausted" class="notice notice--info">
         <span class="notice__body">上传次数已用完。如果课表有变动,请联系管理员帮你修改。</span>
       </p>
 
-      <ScheduleTable :courses="visibleCourses" :sections="term.sections" :monday="monday" :week="week" />
+      <ScheduleTable v-if="term.ready" :courses="visibleCourses" :sections="term.sections" :monday="monday" :week="week" />
+      <p v-else class="notice notice--info">{{ term.problem }}</p>
     </template>
 
     <section v-else-if="status === SCHEDULE_STATUS.NONE" class="panel">
       <EmptyState
         title="你还没有上传课表"
-        description="上传一张课表截图,管理员会帮你解析成可查看的课表。每人最多可上传 3 次。"
+        :description="`上传一张课表截图，管理员会帮你解析成可查看的课表。每人最多可上传 ${info.max_uploads} 次。`"
       >
         <button class="btn btn--sm" type="button" @click="goUpload">上传课表</button>
       </EmptyState>
@@ -262,7 +260,8 @@ onBeforeUnmount(() => clearInterval(clockTimer))
         <StatusTag :status="status" />
         <h2 class="pending__title">课表已提交,等待管理员解析</h2>
         <p class="pending__desc">
-          提交于 {{ formatDateTime(info.last_uploaded_at) }}。管理员确认后,课表会自动显示在这里。
+          <span v-if="info.last_uploaded_at">提交于 {{ formatDateTime(info.last_uploaded_at) }}。</span>
+          管理员确认后，课表会显示在这里。
         </p>
 
         <ol class="steps">

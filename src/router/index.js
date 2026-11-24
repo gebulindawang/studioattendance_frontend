@@ -53,6 +53,12 @@ const router = createRouter({
           component: () => import('../views/admin/RecordsView.vue'),
           meta: { title: '考勤记录' },
         },
+        {
+          path: 'config',
+          name: 'admin-config',
+          component: () => import('../views/admin/ConfigView.vue'),
+          meta: { title: '学期配置' },
+        },
       ],
     },
     {

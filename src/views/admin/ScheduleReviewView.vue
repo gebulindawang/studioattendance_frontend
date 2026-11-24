@@ -44,6 +44,7 @@ const saveError = ref('')
 const savedNow = ref(false)
 
 const uploadIndex = ref(0)
+const draftImageId = ref(0)
 const lightbox = ref(false)
 
 const previewWeek = ref(1)
@@ -110,7 +111,8 @@ async function load() {
   }
 }
 
-function applyParseResult(courses) {
+function applyParseResult(courses, imageId) {
+  draftImageId.value = imageId
   draft.value = courses.map(toDraft)
   confirmChecked.value = false
   viewMode.value = 'edit'
@@ -121,8 +123,12 @@ function applyParseResult(courses) {
 function restoreParse() {
   const state = getParseState(userKey)
   if (!state) return
+  if (state.imageId !== uploads.value.at(-1)?.id) {
+    clearParseState(userKey)
+    return
+  }
   if (state.status === 'done') {
-    applyParseResult(state.result)
+    applyParseResult(state.result, state.imageId)
     return
   }
   if (state.status === 'error') {
@@ -133,7 +139,7 @@ function restoreParse() {
   phase.value = 'recognizing'
   state.promise.then((result) => {
     if (!alive) return
-    applyParseResult(result)
+    applyParseResult(result, state.imageId)
   }).catch((err) => {
     if (!alive) return
     recognizeError.value = err?.message || '解析失败,请稍后重试'
@@ -142,15 +148,17 @@ function restoreParse() {
 }
 
 async function recognize() {
+  const imageId = uploads.value.at(-1)?.id
+  if (!imageId) return
   phase.value = 'recognizing'
   recognizeError.value = ''
   saveError.value = ''
   savedNow.value = false
-  const state = startScheduleParse(userKey)
   try {
+    const state = startScheduleParse(userKey, imageId)
     const result = await state.promise
     if (!alive) return
-    applyParseResult(result)
+    applyParseResult(result, state.imageId)
   } catch (err) {
     if (!alive) return
     recognizeError.value = err?.message || '解析失败,请稍后重试'
@@ -159,6 +167,7 @@ async function recognize() {
 }
 
 function editExisting() {
+  draftImageId.value = 0
   draft.value = detail.value.courses.map(toDraft)
   confirmChecked.value = false
   viewMode.value = 'edit'
@@ -211,11 +220,11 @@ async function save() {
       end_week: c.end_week,
       week_type: c.week_type,
     }))
-    detail.value = await confirmSchedule(userKey, payload)
+    detail.value = await confirmSchedule(userKey, payload, draftImageId.value)
     clearParseState(userKey)
     draft.value = []
     savedNow.value = true
-    phase.value = 'saved'
+    initPhase()
   } catch (err) {
     saveError.value = err?.message || '保存失败,请稍后重试'
   } finally {

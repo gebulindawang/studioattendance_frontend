@@ -4,8 +4,7 @@ import { useRouter } from 'vue-router'
 import MemberTopbar from '@/components/MemberTopbar.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import UploadMeter from '@/components/UploadMeter.vue'
-import { getMySchedule, getMyUploadCount, uploadSchedule } from '@/api/schedule'
-import { useUserStore } from '@/stores/user'
+import { getMySchedule, uploadSchedule } from '@/api/schedule'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
 import { formatFileSize } from '@/utils/format'
 
@@ -13,7 +12,6 @@ const ACCEPT_TYPES = ['image/jpeg', 'image/png', 'image/webp']
 const MAX_SIZE = 5 * 1024 * 1024
 
 const router = useRouter()
-const userStore = useUserStore()
 
 const info = ref(null)
 const loading = ref(true)
@@ -48,11 +46,7 @@ async function load() {
   loading.value = true
   loadError.value = ''
   try {
-    const [scheduleInfo, uploadCount] = await Promise.all([
-      getMySchedule(userStore.profile),
-      getMyUploadCount(userStore.profile),
-    ])
-    info.value = { ...scheduleInfo, upload_count: uploadCount }
+    info.value = await getMySchedule()
   } catch (err) {
     loadError.value = err?.message || '加载失败,请稍后重试'
   } finally {
@@ -107,19 +101,20 @@ async function submit() {
   progress.value = 0
   submitError.value = ''
   try {
-    info.value = await uploadSchedule(userStore.profile, file.value, (p) => {
+    await uploadSchedule(file.value, (p) => {
       progress.value = p
     })
-    try {
-      info.value.upload_count = await getMyUploadCount(userStore.profile)
-    } catch {
-      // 上传已成功,次数回读失败时沿用接口返回的次数
-    }
     done.value = true
     clearFile()
+    try {
+      info.value = await getMySchedule()
+    } catch {
+      // 返回首页时会重新读取，此处保留上传成功的状态。
+      info.value = { ...info.value, upload_count: info.value.upload_count + 1 }
+    }
   } catch (err) {
     submitError.value = err?.message || '上传失败,请稍后重试'
-    if (err?.status === 403) await load()
+    if (err?.status === 409) await load()
   } finally {
     uploading.value = false
   }

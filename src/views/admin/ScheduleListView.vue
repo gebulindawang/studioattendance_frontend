@@ -2,8 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import StatusTag from '@/components/StatusTag.vue'
-import { listScheduleUsers, resetMockData, resetSchedule } from '@/api/adminSchedule'
-import { MOCK } from '@/api/mockConfig'
+import { listScheduleUsers, resetSchedule } from '@/api/adminSchedule'
 import {
   SCHEDULE_STATUS,
   SCHEDULE_STATUS_LABELS,
@@ -89,12 +88,6 @@ async function resetUser(u) {
   } finally {
     resettingId.value = null
   }
-}
-
-function resetDemo() {
-  if (!window.confirm('这会清除所有演示数据并恢复到初始状态,确定吗?')) return
-  resetMockData()
-  load()
 }
 
 onMounted(load)
@@ -206,10 +199,6 @@ onMounted(load)
     </div>
   </section>
 
-  <p v-if="MOCK.admin" class="demo">
-    人员为真实数据,课表状态为演示数据,保存在浏览器本地。
-    <button class="link-btn" type="button" @click="resetDemo">重置演示数据</button>
-  </p>
 </template>
 
 <style scoped>
@@ -307,9 +296,4 @@ onMounted(load)
   white-space: nowrap;
 }
 
-.demo {
-  margin: 14px 4px 0;
-  font-size: 13px;
-  color: var(--color-text-faint);
-}
 </style>

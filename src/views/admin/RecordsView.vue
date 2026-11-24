@@ -36,7 +36,8 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    records.value = await getCheckinRecords()
+    const data = await getCheckinRecords()
+    records.value = data.records
   } catch (err) {
     errorMessage.value = err?.message || '记录加载失败,请稍后重试'
   } finally {

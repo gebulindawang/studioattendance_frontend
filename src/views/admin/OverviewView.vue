@@ -13,22 +13,20 @@ const loading = ref(false)
 const errorMessage = ref('')
 const scheduleTodo = ref(0)
 
-const pad = (n) => String(n).padStart(2, '0')
-const toDateStr = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
-const todayStr = toDateStr(new Date())
+const today = ref('')
 
 const shouldAttend = computed(
   () => members.value.filter((m) => m.role === ROLE.MEMBER && m.status === USER_STATUS.ACTIVE).length,
 )
 
-const todayRecords = computed(() => records.value.filter((r) => r.checkin_date === todayStr))
+const todayRecords = computed(() => records.value.filter((r) => r.checkin_date === today.value))
 
 function countBy(list, status) {
   return list.filter((r) => r.status === status).length
 }
 
 const stats = computed(() => [
-  { label: '应到人数', value: shouldAttend.value, tone: 'plain' },
+  { label: '在职成员', value: shouldAttend.value, tone: 'plain' },
   { label: '正常', value: countBy(todayRecords.value, CHECKIN_STATUS.NORMAL), tone: 'ok' },
   { label: '迟到', value: countBy(todayRecords.value, CHECKIN_STATUS.LATE), tone: 'warn' },
   { label: '缺勤', value: countBy(todayRecords.value, CHECKIN_STATUS.ABSENT), tone: 'danger' },
@@ -60,8 +58,9 @@ const weekRates = computed(() => {
   return days.map((date) => {
     const list = records.value.filter((r) => r.checkin_date === date)
     const attended = countBy(list, CHECKIN_STATUS.NORMAL) + countBy(list, CHECKIN_STATUS.LATE)
-    const rate = list.length ? Math.round((attended / list.length) * 100) : 0
-    return { date: date.slice(5), rate, isToday: date === todayStr }
+    const expected = attended + countBy(list, CHECKIN_STATUS.ABSENT)
+    const rate = expected ? Math.round((attended / expected) * 100) : 0
+    return { date: date.slice(5), rate, isToday: date === today.value }
   })
 })
 
@@ -73,7 +72,10 @@ async function load() {
   loading.value = true
   errorMessage.value = ''
   try {
-    ;[members.value, records.value] = await Promise.all([getMembers(), getCheckinRecords()])
+    const [accounts, attendance] = await Promise.all([getMembers(), getCheckinRecords()])
+    members.value = accounts
+    records.value = attendance.records
+    today.value = attendance.date
   } catch (err) {
     errorMessage.value = err?.message || '数据加载失败,请稍后重试'
   } finally {

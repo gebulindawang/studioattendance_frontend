@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { name: 'admin-schedules', label: '课表管理' },
   { name: 'admin-members', label: '成员管理' },
   { name: 'admin-records', label: '考勤记录' },
+  { name: 'admin-config', label: '学期配置' },
 ]
 
 function logout() {
@@ -60,7 +61,7 @@ function logout() {
         <h1 class="admin__title">{{ route.meta.title }}</h1>
       </header>
       <div class="admin__content">
-        <RouterView />
+        <RouterView :key="$route.path" />
       </div>
     </div>
   </div>
