@@ -4,7 +4,7 @@ import { RouterLink } from 'vue-router'
 import { getCheckinRecords, getMembers } from '@/api/admin'
 import { listScheduleUsers } from '@/api/adminSchedule'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
-import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, USER_STATUS } from '@/constants/checkin'
+import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, STUDIO_RECORD, USER_STATUS } from '@/constants/checkin'
 import { ROLE } from '@/constants/role'
 
 const members = ref([])
@@ -27,39 +27,33 @@ function countBy(list, status) {
 
 const stats = computed(() => [
   { label: '在职成员', value: shouldAttend.value, tone: 'plain' },
-  { label: '正常', value: countBy(todayRecords.value, CHECKIN_STATUS.NORMAL), tone: 'ok' },
-  { label: '迟到', value: countBy(todayRecords.value, CHECKIN_STATUS.LATE), tone: 'warn' },
-  { label: '缺勤', value: countBy(todayRecords.value, CHECKIN_STATUS.ABSENT), tone: 'danger' },
   {
-    label: '请假 / 豁免',
-    value:
-      countBy(todayRecords.value, CHECKIN_STATUS.LEAVE) +
-      countBy(todayRecords.value, CHECKIN_STATUS.EXEMPTED),
-    tone: 'info',
+    label: '已签到',
+    value: countBy(todayRecords.value, CHECKIN_STATUS.NORMAL) + countBy(todayRecords.value, CHECKIN_STATUS.LATE),
+    tone: 'ok',
   },
+  { label: '待签到', value: countBy(todayRecords.value, CHECKIN_STATUS.PENDING), tone: 'info' },
+  { label: '已截止 · 未签到', value: countBy(todayRecords.value, CHECKIN_STATUS.CLOSED), tone: 'warn' },
 ])
-
-const STATUS_ORDER = {
-  [CHECKIN_STATUS.ABSENT]: 0,
-  [CHECKIN_STATUS.LATE]: 1,
-  [CHECKIN_STATUS.LEAVE]: 2,
-  [CHECKIN_STATUS.EXEMPTED]: 3,
-  [CHECKIN_STATUS.NORMAL]: 4,
-}
 
 const todayList = computed(() =>
   todayRecords.value
-    .filter((r) => r.status !== CHECKIN_STATUS.NORMAL)
-    .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]),
+    .filter((r) => r.checkin_time)
+    .sort((a, b) => Date.parse(b.checkin_time) - Date.parse(a.checkin_time)),
 )
 
 const weekRates = computed(() => {
-  const days = [...new Set(records.value.map((r) => r.checkin_date))].sort().slice(-7)
+  if (!today.value) return []
+  const firstDay = new Date(`${today.value}T00:00:00Z`)
+  firstDay.setUTCDate(firstDay.getUTCDate() - 6)
+  const start = firstDay.toISOString().slice(0, 10)
+  const recent = records.value.filter((r) => r.checkin_date >= start && r.checkin_date <= today.value)
+  const days = [...new Set(recent.map((r) => r.checkin_date))].sort()
   return days.map((date) => {
-    const list = records.value.filter((r) => r.checkin_date === date)
+    const list = recent.filter((r) => r.checkin_date === date)
     const attended = countBy(list, CHECKIN_STATUS.NORMAL) + countBy(list, CHECKIN_STATUS.LATE)
-    const expected = attended + countBy(list, CHECKIN_STATUS.ABSENT)
-    const rate = expected ? Math.round((attended / expected) * 100) : 0
+    const expected = attended + countBy(list, CHECKIN_STATUS.CLOSED) + countBy(list, CHECKIN_STATUS.ABSENT)
+    const rate = expected ? Math.round((attended / expected) * 100) : null
     return { date: date.slice(5), rate, isToday: date === today.value }
   })
 })
@@ -123,7 +117,7 @@ onMounted(() => {
   <div class="grid">
     <section class="panel">
       <header class="panel__head">
-        <h2 class="panel__title">今日异常考勤</h2>
+        <h2 class="panel__title">今日签到</h2>
         <span class="panel__hint">共 {{ todayList.length }} 条</span>
       </header>
       <div class="table-wrap">
@@ -139,7 +133,7 @@ onMounted(() => {
           <tbody>
             <tr v-if="!loading && todayList.length === 0">
               <td class="table__empty" colspan="4">
-                {{ todayRecords.length === 0 ? '今天还没有考勤记录' : '今天没有异常考勤，大家都正常' }}
+                今天还没有成员签到
               </td>
             </tr>
             <tr v-for="r in todayList" :key="r.id">
@@ -147,7 +141,7 @@ onMounted(() => {
                 <span class="avatar" aria-hidden="true">{{ r.nickname.slice(0, 1) }}</span>
                 {{ r.nickname }}
               </td>
-              <td class="table__muted">第 {{ r.section }} 节</td>
+              <td class="table__muted">第 {{ r.section }} {{ r.record_kind === STUDIO_RECORD ? '大节' : '节' }}</td>
               <td>
                 <span class="tag" :class="`tag--${CHECKIN_TONES[r.status]}`">
                   {{ CHECKIN_LABELS[r.status] }}
@@ -162,18 +156,18 @@ onMounted(() => {
 
     <section class="panel">
       <header class="panel__head">
-        <h2 class="panel__title">近 7 天到勤率</h2>
+        <h2 class="panel__title">近 7 天签到率</h2>
       </header>
       <ul class="rates">
         <li v-for="d in weekRates" :key="d.date" class="rate" :class="{ 'is-today': d.isToday }">
           <span class="rate__date">{{ d.date }}</span>
           <span class="rate__track">
-            <span class="rate__fill" :style="{ width: `${d.rate}%` }"></span>
+            <span class="rate__fill" :style="{ width: `${d.rate ?? 0}%` }"></span>
           </span>
-          <span class="rate__value">{{ d.rate }}%</span>
+          <span class="rate__value">{{ d.rate === null ? '—' : `${d.rate}%` }}</span>
         </li>
       </ul>
-      <p class="rates__note">到勤率 = (正常 + 迟到) / 当日记录数</p>
+      <p class="rates__note">已签到人次占已签到及已截止场次的比例</p>
     </section>
   </div>
 </template>
@@ -205,7 +199,7 @@ onMounted(() => {
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 12px;
   margin-bottom: 16px;
 }
@@ -241,10 +235,6 @@ onMounted(() => {
 
 .stat--warn .stat__value {
   color: #8a6414;
-}
-
-.stat--danger .stat__value {
-  color: #a3342a;
 }
 
 .stat--info .stat__value {

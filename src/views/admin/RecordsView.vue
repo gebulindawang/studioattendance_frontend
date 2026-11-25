@@ -1,7 +1,9 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
-import { getCheckinRecords } from '@/api/admin'
-import { CHECKIN_LABELS, CHECKIN_TONES } from '@/constants/checkin'
+import { getCheckinRecords, getMembers } from '@/api/admin'
+import { generateWeekAttendance } from '@/api/checkin'
+import { CHECKIN_LABELS, CHECKIN_TONES, GENERATION_LABELS, STUDIO_RECORD, USER_STATUS } from '@/constants/checkin'
+import { ROLE } from '@/constants/role'
 
 const records = ref([])
 const loading = ref(false)
@@ -9,6 +11,16 @@ const errorMessage = ref('')
 const keyword = ref('')
 const statusFilter = ref('')
 const dateFilter = ref('')
+const members = ref([])
+const selectedIds = ref([])
+const generating = ref(false)
+const generationError = ref('')
+const generation = ref(null)
+const selectedMembers = computed(() => new Map(members.value.map((member) => [member.id, member])))
+const skipped = computed(() => generation.value?.members.filter((member) => member.state !== 'ready') ?? [])
+const statusOptions = computed(() =>
+  Object.entries(CHECKIN_LABELS).filter(([value]) => records.value.some((record) => record.status === Number(value))),
+)
 
 const filtered = computed(() => {
   const kw = keyword.value.trim().toLowerCase()
@@ -45,10 +57,69 @@ async function load() {
   }
 }
 
-onMounted(load)
+async function loadMembers() {
+  try {
+    const accounts = await getMembers()
+    members.value = accounts.filter((member) => member.role === ROLE.MEMBER && member.status === USER_STATUS.ACTIVE)
+    selectedIds.value = members.value.map((member) => member.id)
+  } catch (err) {
+    generationError.value = err?.message || '成员加载失败'
+  }
+}
+
+async function generate() {
+  if (generating.value || !selectedIds.value.length) return
+  generating.value = true
+  generationError.value = ''
+  generation.value = null
+  try {
+    generation.value = await generateWeekAttendance(selectedIds.value)
+    await load()
+  } catch (err) {
+    generationError.value = err?.message || '本周签到表生成失败'
+  } finally {
+    generating.value = false
+  }
+}
+
+onMounted(() => {
+  load()
+  loadMembers()
+})
 </script>
 
 <template>
+  <section class="panel generation">
+    <header class="panel__head">
+      <h2 class="panel__title">本周签到表</h2>
+      <button class="btn btn--sm" type="button" :disabled="generating || !selectedIds.length" @click="generate">
+        {{ generating ? '生成中…' : '生成所选成员的签到表' }}
+      </button>
+    </header>
+    <details v-if="members.length" class="generation__members">
+      <summary>已选 {{ selectedIds.length }} / {{ members.length }} 位成员</summary>
+      <div class="generation__choices">
+        <label v-for="member in members" :key="member.id">
+          <input v-model="selectedIds" type="checkbox" :value="member.id" :disabled="generating" />
+          {{ member.nickname }}
+        </label>
+      </div>
+    </details>
+    <p v-if="generationError" class="state-error" role="alert">{{ generationError }}</p>
+    <div v-if="generation" class="generation__result" role="status">
+      <p>
+        {{ generation.week_start }} 当周新增 {{ generation.added }} 格，
+        调整 {{ generation.updated }} 格，移除 {{ generation.removed }} 格。
+      </p>
+      <ul v-if="skipped.length">
+        <li v-for="member in skipped" :key="member.user_id">
+          {{ selectedMembers.get(member.user_id)?.nickname || `成员 ${member.user_id}` }} ·
+          {{ GENERATION_LABELS[member.state] }}
+        </li>
+      </ul>
+    </div>
+  </section>
+
   <section class="panel">
     <div class="toolbar">
       <input v-model="dateFilter" class="control" type="date" aria-label="按日期筛选" />
@@ -61,7 +132,7 @@ onMounted(load)
       />
       <select v-model="statusFilter" class="control" aria-label="按状态筛选">
         <option value="">全部状态</option>
-        <option v-for="(label, value) in CHECKIN_LABELS" :key="value" :value="value">
+        <option v-for="[value, label] in statusOptions" :key="value" :value="value">
           {{ label }}
         </option>
       </select>
@@ -98,7 +169,7 @@ onMounted(load)
                 <span class="avatar" aria-hidden="true">{{ r.nickname.slice(0, 1) }}</span>
                 {{ r.nickname }}
               </td>
-              <td class="table__muted">第 {{ r.section }} 节</td>
+              <td class="table__muted">第 {{ r.section }} {{ r.record_kind === STUDIO_RECORD ? '大节' : '节' }}</td>
               <td>
                 <span class="tag" :class="`tag--${CHECKIN_TONES[r.status]}`">
                   {{ CHECKIN_LABELS[r.status] }}
@@ -115,6 +186,33 @@ onMounted(load)
 </template>
 
 <style scoped>
+.generation {
+  margin-bottom: 16px;
+}
+
+.generation__members,
+.generation__result {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.generation__choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 18px;
+  padding-top: 10px;
+}
+
+.generation__choices label {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.generation__result p {
+  margin: 0;
+}
+
 .state-error {
   margin: 0;
   padding: 9px 20px;

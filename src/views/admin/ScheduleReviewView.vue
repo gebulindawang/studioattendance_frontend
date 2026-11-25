@@ -376,7 +376,7 @@ onBeforeUnmount(() => {
 
           <template v-else-if="phase === 'saved'">
             <p v-if="savedNow" class="notice notice--ok" role="status">
-              <span class="notice__body">已确认并保存。用户现在可以在“我的课表”中查看这份课表。</span>
+              <span class="notice__body">课表已确认。成员可在「工作室签到」查看本周可签到的时段。</span>
             </p>
             <p v-else class="flow__text">
               该课表已于 {{ formatDateTime(detail.confirmed_at) }} 确认生效,共 {{ detail.courses.length }} 门课程。

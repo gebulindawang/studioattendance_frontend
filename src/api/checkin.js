@@ -1,9 +1,13 @@
 import request from '@/utils/request'
 
-export function getTodayAttendance() {
-  return request.get('/record/today')
+export function getWeekAttendance() {
+  return request.get('/record/week')
 }
 
-export function checkIn(section) {
-  return request.post(`/record/checkin/${section}`)
+export function checkIn(id) {
+  return request.post(`/record/${id}/checkin`)
+}
+
+export function generateWeekAttendance(userIds) {
+  return request.put('/record/record', { user_ids: userIds }, { timeout: 60000 })
 }
