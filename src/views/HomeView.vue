@@ -24,6 +24,7 @@ const reasons = {
   no_configuration: ['本周暂无签到安排', '本周没有可用的学期或大节配置。'],
   no_slots: ['本周没有可签到时段', '当前课表和节次配置下，本周没有空闲的大节。'],
   not_generated: ['本周签到表尚未生成', '管理员生成后，签到时段会显示在这里。'],
+  needs_regeneration: ['本周签到表需要更新', '管理员重新生成后，缺少的签到时段会显示在这里。'],
 }
 const reason = computed(() => reasons[attendance.value?.state])
 const uploadsAvailable = computed(
@@ -34,7 +35,9 @@ const rows = computed(() => {
   if (!attendance.value) return []
   const records = new Map()
   for (const record of attendance.value.records) {
-    records.set(`${record.checkin_date.slice(0, 10)}:${record.section}`, record)
+    const date = record.checkin_date.slice(0, 10)
+    const section = record.first_section ?? record.section
+    records.set(`${date}:${section}`, record)
   }
   return attendance.value.blocks.map((block) => ({
     ...block,
@@ -134,7 +137,7 @@ onBeforeUnmount(() => {
       <section v-if="rows.length && (!reason || attendance.records.length)" class="panel">
         <header class="panel__head">
           <h2 class="panel__title">本周签到</h2>
-          <span class="panel__hint">大节开始前 5 分钟开放，开始时截止</span>
+          <span class="panel__hint">上午、下午、晚上分别签到，各段首个大节开始前 5 分钟开放</span>
         </header>
         <div class="table-wrap">
           <table class="table week-grid">
