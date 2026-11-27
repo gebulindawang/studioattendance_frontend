@@ -2,8 +2,9 @@
 import { computed, onMounted, ref } from 'vue'
 import { getCheckinRecords, getMembers } from '@/api/admin'
 import { generateWeekAttendance } from '@/api/checkin'
-import { CHECKIN_LABELS, CHECKIN_TONES, GENERATION_LABELS, STUDIO_RECORD, USER_STATUS } from '@/constants/checkin'
+import { CHECKIN_LABELS, CHECKIN_TONES, GENERATION_LABELS, USER_STATUS } from '@/constants/checkin'
 import { ROLE } from '@/constants/role'
+import { formatAttendanceSection } from '@/utils/checkin'
 
 const records = ref([])
 const loading = ref(false)
@@ -169,7 +170,7 @@ onMounted(() => {
                 <span class="avatar" aria-hidden="true">{{ r.nickname.slice(0, 1) }}</span>
                 {{ r.nickname }}
               </td>
-              <td class="table__muted">第 {{ r.section }} {{ r.record_kind === STUDIO_RECORD ? '大节' : '节' }}</td>
+              <td class="table__muted">{{ formatAttendanceSection(r) }}</td>
               <td>
                 <span class="tag" :class="`tag--${CHECKIN_TONES[r.status]}`">
                   {{ CHECKIN_LABELS[r.status] }}

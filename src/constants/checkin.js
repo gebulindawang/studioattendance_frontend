@@ -6,6 +6,7 @@ export const CHECKIN_STATUS = {
   LEAVE: 4,
   EXEMPTED: 5,
   CLOSED: 6,
+  MADE_UP: 7,
 }
 
 export const CHECKIN_LABELS = {
@@ -16,6 +17,7 @@ export const CHECKIN_LABELS = {
   [CHECKIN_STATUS.LEAVE]: '请假',
   [CHECKIN_STATUS.EXEMPTED]: '有课豁免',
   [CHECKIN_STATUS.CLOSED]: '已截止 · 未签到',
+  [CHECKIN_STATUS.MADE_UP]: '已补签',
 }
 
 export const CHECKIN_TONES = {
@@ -26,6 +28,25 @@ export const CHECKIN_TONES = {
   [CHECKIN_STATUS.LEAVE]: 'info',
   [CHECKIN_STATUS.EXEMPTED]: 'muted',
   [CHECKIN_STATUS.CLOSED]: 'warn',
+  [CHECKIN_STATUS.MADE_UP]: 'ok',
+}
+
+export const MAKEUP_STATUS = {
+  PENDING: 'pending',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+}
+
+export const MAKEUP_LABELS = {
+  [MAKEUP_STATUS.PENDING]: '待审批',
+  [MAKEUP_STATUS.APPROVED]: '已通过',
+  [MAKEUP_STATUS.REJECTED]: '已驳回',
+}
+
+export const MAKEUP_TONES = {
+  [MAKEUP_STATUS.PENDING]: 'warn',
+  [MAKEUP_STATUS.APPROVED]: 'ok',
+  [MAKEUP_STATUS.REJECTED]: 'danger',
 }
 
 export const STUDIO_RECORD = 1

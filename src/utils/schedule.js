@@ -4,6 +4,18 @@ export const WEEK_TYPE = { EVERY: 0, ODD: 1, EVEN: 2 }
 
 export const WEEK_TYPE_LABELS = { 0: '每周', 1: '单周', 2: '双周' }
 
+export const SECTIONS_PER_BLOCK = 2
+export const ATTENDANCE_BLOCK_COUNT = 6
+
+export function firstSectionOfBlock(block) {
+  return (block - 1) * SECTIONS_PER_BLOCK + 1
+}
+
+export function formatSectionPair(block) {
+  const first = firstSectionOfBlock(block)
+  return `第 ${first}–${first + SECTIONS_PER_BLOCK - 1} 节`
+}
+
 // 节次时间(SECTIONS)、周数上限(MAX_WEEK)、学期开始日期(SEMESTER_START)
 // 原先写死在本文件,现改为查询 GET /schedule/semester,见 stores/term.js。
 

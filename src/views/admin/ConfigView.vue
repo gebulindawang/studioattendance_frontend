@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useTermStore } from '@/stores/term'
+import { ATTENDANCE_BLOCK_COUNT, SECTIONS_PER_BLOCK, formatSectionPair } from '@/utils/schedule'
 
 const term = useTermStore()
 
@@ -31,10 +32,12 @@ function toDate(value) {
   return new Date(Number(matched[1]), Number(matched[2]) - 1, Number(matched[3]))
 }
 
-// 面板里第 N 大节覆盖的小节区间,只用于提示文案
-const blockHint = (index) => `第 ${index * 2 - 1}-${index * 2} 节`
-
-const sectionCount = computed(() => form.value.blocks.length * 2)
+const sectionCount = ATTENDANCE_BLOCK_COUNT * SECTIONS_PER_BLOCK
+const nextBlockIndex = computed(() => {
+  const configured = new Set(form.value.blocks.map((block) => block.index))
+  return Array.from({ length: ATTENDANCE_BLOCK_COUNT }, (_, i) => i + 1)
+    .find((index) => !configured.has(index))
+})
 
 function syncFromStore() {
   const info = term.semester
@@ -54,15 +57,17 @@ function validate() {
   if (!Number.isInteger(weeks) || weeks < 1 || weeks > 30) return '总周数需为 1–30 的整数'
   if (!blocks.length) return '节次时间不能为空'
   for (const b of blocks) {
-    if (!b.start || !b.end) return `第 ${b.index} 大节的时间未填写`
-    if (b.start >= b.end) return `第 ${b.index} 大节的下课时间需晚于上课时间`
+    if (!b.start || !b.end) return `${formatSectionPair(b.index)}的时间未填写`
+    if (b.start >= b.end) return `${formatSectionPair(b.index)}的下课时间需晚于上课时间`
   }
   return ''
 }
 
 function addBlock() {
-  const lastIndex = form.value.blocks.at(-1)?.index ?? 0
-  if (lastIndex < 24) form.value.blocks.push({ id: 0, index: lastIndex + 1, start: '', end: '' })
+  const index = nextBlockIndex.value
+  if (index === undefined) return
+  form.value.blocks.push({ id: 0, index, start: '', end: '' })
+  form.value.blocks.sort((a, b) => a.index - b.index)
 }
 
 async function load() {
@@ -162,26 +167,24 @@ onMounted(load)
       <header class="panel__head">
         <h2 class="panel__title">节次时间</h2>
         <span class="panel__hint">
-          共 {{ form.blocks.length }} 个大节,展开为 {{ sectionCount }} 个小节;每 2 个小节共用同一时段
+          签到使用第 1–{{ sectionCount }} 节，每 {{ SECTIONS_PER_BLOCK }} 节共用一组时间
         </span>
       </header>
       <div class="table-wrap">
         <table class="table">
           <thead>
             <tr>
-              <th>大节</th>
-              <th>覆盖小节</th>
+              <th>节次</th>
               <th>上课时间</th>
               <th>下课时间</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="form.blocks.length === 0">
-              <td class="table__empty" colspan="4">暂无节次数据</td>
+              <td class="table__empty" colspan="3">暂无节次数据</td>
             </tr>
             <tr v-for="b in form.blocks" :key="b.index">
-              <td class="table__muted">第 {{ b.index }} 大节</td>
-              <td class="table__muted">{{ blockHint(b.index) }}</td>
+              <td class="table__muted">{{ formatSectionPair(b.index) }}</td>
               <td>
                 <input v-model="b.start" class="control cfg__time" type="time" step="60" aria-label="上课时间" />
               </td>
@@ -194,8 +197,8 @@ onMounted(load)
       </div>
       <div class="cfg__block-actions">
         <button class="btn btn--sm btn--secondary" type="button"
-          :disabled="saving || (form.blocks.at(-1)?.index ?? 0) >= 24" @click="addBlock">
-          添加大节
+          :disabled="saving || nextBlockIndex === undefined" @click="addBlock">
+          添加节次
         </button>
       </div>
     </section>

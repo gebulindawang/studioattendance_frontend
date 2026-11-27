@@ -5,7 +5,7 @@ import EmptyState from '@/components/EmptyState.vue'
 import MemberTopbar from '@/components/MemberTopbar.vue'
 import { checkIn, getWeekAttendance } from '@/api/checkin'
 import { CHECKIN_STATUS } from '@/constants/checkin'
-import { WEEKDAY_LABELS } from '@/utils/schedule'
+import { ATTENDANCE_BLOCK_COUNT, WEEKDAY_LABELS, firstSectionOfBlock, formatSectionPair } from '@/utils/schedule'
 
 const attendance = ref(null)
 const loading = ref(true)
@@ -21,8 +21,8 @@ let refreshTimer
 const reasons = {
   not_uploaded: ['还没有上传课表', '上传课表后，管理员才能确认你的可签到时段。'],
   waiting_review: ['课表待解析', '管理员确认课表后，本周可签到的时段会自动生成。'],
-  no_configuration: ['本周暂无签到安排', '本周没有可用的学期或大节配置。'],
-  no_slots: ['本周没有可签到时段', '当前课表和节次配置下，本周没有空闲的大节。'],
+  no_configuration: ['本周暂无签到安排', '本周没有可用的学期或节次配置。'],
+  no_slots: ['本周没有可签到时段', '根据当前课表和节次配置，本周没有空闲时段。'],
   not_generated: ['本周签到表尚未生成', '管理员生成后，签到时段会显示在这里。'],
   needs_regeneration: ['本周签到表需要更新', '管理员重新生成后，缺少的签到时段会显示在这里。'],
 }
@@ -39,13 +39,19 @@ const rows = computed(() => {
     const section = record.first_section ?? record.section
     records.set(`${date}:${section}`, record)
   }
-  return attendance.value.blocks.map((block) => ({
-    ...block,
-    cells: attendance.value.days.map((date) => ({
-      date,
-      record: records.get(`${date}:${block.section}`),
-    })),
-  }))
+  const blocks = new Map(attendance.value.blocks.map((block) => [block.section, block]))
+  return Array.from({ length: ATTENDANCE_BLOCK_COUNT }, (_, i) => {
+    const section = i + 1
+    const block = blocks.get(section)
+    return {
+      section,
+      block,
+      cells: attendance.value.days.map((date) => ({
+        date,
+        record: block && records.get(`${date}:${section}`),
+      })),
+    }
+  })
 })
 
 function formatClock(timestamp) {
@@ -54,6 +60,7 @@ function formatClock(timestamp) {
 
 function recordState(record) {
   if (record.status === CHECKIN_STATUS.NORMAL) return 'signed'
+  if (record.status === CHECKIN_STATUS.MADE_UP) return 'made-up'
   const start = Date.parse(record.slot_start)
   if (now.value >= start) return 'closed'
   return now.value >= Date.parse(record.opens_at) ? 'open' : 'upcoming'
@@ -110,6 +117,9 @@ onBeforeUnmount(() => {
   <main class="attendance">
     <MemberTopbar title="工作室签到">
       <template #actions>
+        <RouterLink :to="{ name: 'my-attendance' }" class="btn btn--sm btn--secondary">
+          我的考勤
+        </RouterLink>
         <RouterLink v-if="uploadsAvailable" :to="{ name: 'upload' }" class="btn btn--sm btn--secondary">
           上传课表
         </RouterLink>
@@ -134,16 +144,16 @@ onBeforeUnmount(() => {
         <EmptyState :title="reason[0]" :description="reason[1]" />
       </section>
 
-      <section v-if="rows.length && (!reason || attendance.records.length)" class="panel">
+      <section v-if="attendance.blocks.length && (!reason || attendance.records.length)" class="panel">
         <header class="panel__head">
           <h2 class="panel__title">本周签到</h2>
-          <span class="panel__hint">上午、下午、晚上分别签到，各段首个大节开始前 5 分钟开放</span>
+          <span class="panel__hint">今天也一起把想法变成作品。</span>
         </header>
         <div class="table-wrap">
           <table class="table week-grid">
             <thead>
               <tr>
-                <th scope="col">大节 / 时间</th>
+                <th scope="col">节次 / 时间</th>
                 <th v-for="(date, index) in attendance.days" :key="date" scope="col">
                   周{{ WEEKDAY_LABELS[index] }}
                   <small>{{ date.slice(5) }}</small>
@@ -151,18 +161,18 @@ onBeforeUnmount(() => {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="block in rows" :key="block.section">
+              <tr v-for="row in rows" :key="row.section">
                 <th scope="row">
-                  第 {{ block.section }} 大节
-                  <small>{{ block.start.slice(0, 5) }}–{{ block.end.slice(0, 5) }}</small>
+                  {{ formatSectionPair(row.section) }}
+                  <small v-if="row.block">{{ row.block.start.slice(0, 5) }}–{{ row.block.end.slice(0, 5) }}</small>
                 </th>
-                <td v-for="cell in block.cells" :key="cell.date" :class="{ 'is-unavailable': !cell.record }">
+                <td v-for="cell in row.cells" :key="cell.date" :class="{ 'is-unavailable': !cell.record }">
                   <template v-if="cell.record">
                     <button
                       v-if="recordState(cell.record) === 'open'"
                       type="button"
                       class="btn btn--sm"
-                      :aria-label="`${cell.date} 第 ${block.section} 大节签到`"
+                      :aria-label="`${cell.date} 第 ${firstSectionOfBlock(row.section)} 节签到`"
                       :disabled="signingId !== null"
                       @click="sign(cell.record)"
                     >
@@ -171,6 +181,7 @@ onBeforeUnmount(() => {
                     <span v-else-if="recordState(cell.record) === 'signed'" class="tag tag--ok">
                       已签到 {{ formatClock(cell.record.checkin_time) }}
                     </span>
+                    <span v-else-if="recordState(cell.record) === 'made-up'" class="tag tag--ok">已补签</span>
                     <span v-else class="table__muted">
                       {{ recordState(cell.record) === 'upcoming' ? '未开始' : '签到已截止' }}
                     </span>

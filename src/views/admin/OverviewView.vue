@@ -4,8 +4,9 @@ import { RouterLink } from 'vue-router'
 import { getCheckinRecords, getMembers } from '@/api/admin'
 import { listScheduleUsers } from '@/api/adminSchedule'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
-import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, STUDIO_RECORD, USER_STATUS } from '@/constants/checkin'
+import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, USER_STATUS } from '@/constants/checkin'
 import { ROLE } from '@/constants/role'
+import { formatAttendanceSection } from '@/utils/checkin'
 
 const members = ref([])
 const records = ref([])
@@ -25,11 +26,15 @@ function countBy(list, status) {
   return list.filter((r) => r.status === status).length
 }
 
+function attendedCount(list) {
+  return countBy(list, CHECKIN_STATUS.NORMAL) + countBy(list, CHECKIN_STATUS.LATE) + countBy(list, CHECKIN_STATUS.MADE_UP)
+}
+
 const stats = computed(() => [
   { label: '在职成员', value: shouldAttend.value, tone: 'plain' },
   {
     label: '已签到',
-    value: countBy(todayRecords.value, CHECKIN_STATUS.NORMAL) + countBy(todayRecords.value, CHECKIN_STATUS.LATE),
+    value: attendedCount(todayRecords.value),
     tone: 'ok',
   },
   { label: '待签到', value: countBy(todayRecords.value, CHECKIN_STATUS.PENDING), tone: 'info' },
@@ -38,8 +43,8 @@ const stats = computed(() => [
 
 const todayList = computed(() =>
   todayRecords.value
-    .filter((r) => r.checkin_time)
-    .sort((a, b) => Date.parse(b.checkin_time) - Date.parse(a.checkin_time)),
+    .filter((r) => r.checkin_time || r.status === CHECKIN_STATUS.MADE_UP)
+    .sort((a, b) => Date.parse(b.checkin_time || b.updated_at) - Date.parse(a.checkin_time || a.updated_at)),
 )
 
 const weekRates = computed(() => {
@@ -51,7 +56,7 @@ const weekRates = computed(() => {
   const days = [...new Set(recent.map((r) => r.checkin_date))].sort()
   return days.map((date) => {
     const list = recent.filter((r) => r.checkin_date === date)
-    const attended = countBy(list, CHECKIN_STATUS.NORMAL) + countBy(list, CHECKIN_STATUS.LATE)
+    const attended = attendedCount(list)
     const expected = attended + countBy(list, CHECKIN_STATUS.CLOSED) + countBy(list, CHECKIN_STATUS.ABSENT)
     const rate = expected ? Math.round((attended / expected) * 100) : null
     return { date: date.slice(5), rate, isToday: date === today.value }
@@ -141,7 +146,7 @@ onMounted(() => {
                 <span class="avatar" aria-hidden="true">{{ r.nickname.slice(0, 1) }}</span>
                 {{ r.nickname }}
               </td>
-              <td class="table__muted">第 {{ r.section }} {{ r.record_kind === STUDIO_RECORD ? '大节' : '节' }}</td>
+              <td class="table__muted">{{ formatAttendanceSection(r) }}</td>
               <td>
                 <span class="tag" :class="`tag--${CHECKIN_TONES[r.status]}`">
                   {{ CHECKIN_LABELS[r.status] }}

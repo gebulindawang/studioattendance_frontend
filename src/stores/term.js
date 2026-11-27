@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 import { getSemesterConfig, updateSemesterConfig } from '@/api/schedule'
+import { SECTIONS_PER_BLOCK, firstSectionOfBlock } from '@/utils/schedule'
 
 // 后端 StartDate 是 RFC3339(2026-08-31T00:00:00+08:00),只取前 10 位按本地时区构造,
 // 避免被当作 UTC 解析后整体差一天。
@@ -34,12 +35,6 @@ function toFullClock(value) {
   if (!matched) return ''
   return `${matched[1].padStart(2, '0')}:${matched[2]}:${matched[3] ?? '00'}`
 }
-
-// 后端 section_time 按"大节"维护(1 条 = 2 个小节,如 08:00-09:40 覆盖第 1、2 节),
-// 而课表 schedules.start_section / end_section 用的是小节编号(1~13)。
-// 这里按 2 小节/大节展开成小节行,页面统一按"第几小节"取值,不再各页面各算一套。
-// 若后端改为按小节存整表,只需把下面常量改成 1。
-const SECTIONS_PER_BLOCK = 2
 
 /**
  * 学期与节次配置,数据全部来自 GET /schedule/semester,保存走 POST /schedule/updateConfig。
@@ -91,10 +86,10 @@ export const useTermStore = defineStore('term', () => {
       .filter((b) => Number.isInteger(b.index) && b.index > 0 && b.start && b.end)
       .sort((a, b) => a.index - b.index)
 
-    // 大节 → 小节:第 N 大节覆盖第 (N-1)*2+1 和 (N-1)*2+2 小节,共用同一时段
+    // 课表按小节排课，同一组的两个小节共享配置的时段。
     sections.value = blocks.value.flatMap((block) =>
       Array.from({ length: SECTIONS_PER_BLOCK }, (_, i) => ({
-        index: (block.index - 1) * SECTIONS_PER_BLOCK + i + 1,
+        index: firstSectionOfBlock(block.index) + i,
         start: block.start,
         end: block.end,
         block: block.index,
