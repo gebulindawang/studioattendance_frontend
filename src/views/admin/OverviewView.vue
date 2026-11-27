@@ -1,71 +1,63 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import MetricCard from '@/components/MetricCard.vue'
 import { getCheckinRecords, getMembers } from '@/api/admin'
 import { listScheduleUsers } from '@/api/adminSchedule'
+import { listMakeupRequests } from '@/api/checkin'
 import { SCHEDULE_STATUS } from '@/constants/scheduleStatus'
-import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, USER_STATUS } from '@/constants/checkin'
+import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, MAKEUP_STATUS, USER_STATUS } from '@/constants/checkin'
 import { ROLE } from '@/constants/role'
 import { formatAttendanceSection } from '@/utils/checkin'
 
 const members = ref([])
 const records = ref([])
-const loading = ref(false)
+const loading = ref(true)
 const errorMessage = ref('')
-const scheduleTodo = ref(0)
-
 const today = ref('')
+const scheduleTodo = ref(null)
+const makeupTodo = ref(null)
 
-const shouldAttend = computed(
-  () => members.value.filter((m) => m.role === ROLE.MEMBER && m.status === USER_STATUS.ACTIVE).length,
-)
+const todayRecords = computed(() => records.value.filter((record) => record.checkin_date === today.value))
 
-const todayRecords = computed(() => records.value.filter((r) => r.checkin_date === today.value))
-
-function countBy(list, status) {
-  return list.filter((r) => r.status === status).length
+function countBy(list, ...statuses) {
+  return list.filter((record) => statuses.includes(record.status)).length
 }
 
 function attendedCount(list) {
-  return countBy(list, CHECKIN_STATUS.NORMAL) + countBy(list, CHECKIN_STATUS.LATE) + countBy(list, CHECKIN_STATUS.MADE_UP)
+  return countBy(list, CHECKIN_STATUS.NORMAL, CHECKIN_STATUS.LATE, CHECKIN_STATUS.MADE_UP)
 }
 
 const stats = computed(() => [
-  { label: '在职成员', value: shouldAttend.value, tone: 'plain' },
-  {
-    label: '已签到',
-    value: attendedCount(todayRecords.value),
-    tone: 'ok',
-  },
-  { label: '待签到', value: countBy(todayRecords.value, CHECKIN_STATUS.PENDING), tone: 'info' },
-  { label: '已截止 · 未签到', value: countBy(todayRecords.value, CHECKIN_STATUS.CLOSED), tone: 'warn' },
+  { label: '在职成员', icon: 'users', tone: 'blue', value: members.value.filter((member) => member.role === ROLE.MEMBER && member.status === USER_STATUS.ACTIVE).length },
+  { label: '今日已签到', icon: 'checkCircle', tone: 'green', value: attendedCount(todayRecords.value) },
+  { label: '今日待签到', icon: 'clock', tone: 'slate', value: countBy(todayRecords.value, CHECKIN_STATUS.PENDING) },
+  { label: '今日未签到', icon: 'alert', tone: 'amber', value: countBy(todayRecords.value, CHECKIN_STATUS.CLOSED, CHECKIN_STATUS.ABSENT) },
 ])
 
-const todayList = computed(() =>
-  todayRecords.value
-    .filter((r) => r.checkin_time || r.status === CHECKIN_STATUS.MADE_UP)
-    .sort((a, b) => Date.parse(b.checkin_time || b.updated_at) - Date.parse(a.checkin_time || a.updated_at)),
-)
+const todayList = computed(() => todayRecords.value
+  .filter((record) => record.checkin_time || record.status === CHECKIN_STATUS.MADE_UP)
+  .sort((a, b) => Date.parse(b.checkin_time || b.updated_at) - Date.parse(a.checkin_time || a.updated_at)))
 
 const weekRates = computed(() => {
   if (!today.value) return []
-  const firstDay = new Date(`${today.value}T00:00:00Z`)
-  firstDay.setUTCDate(firstDay.getUTCDate() - 6)
-  const start = firstDay.toISOString().slice(0, 10)
-  const recent = records.value.filter((r) => r.checkin_date >= start && r.checkin_date <= today.value)
-  const days = [...new Set(recent.map((r) => r.checkin_date))].sort()
-  return days.map((date) => {
-    const list = recent.filter((r) => r.checkin_date === date)
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(today.value + 'T00:00:00Z')
+    day.setUTCDate(day.getUTCDate() - 6 + index)
+    const key = day.toISOString().slice(0, 10)
+    const list = records.value.filter((record) => record.checkin_date === key)
     const attended = attendedCount(list)
-    const expected = attended + countBy(list, CHECKIN_STATUS.CLOSED) + countBy(list, CHECKIN_STATUS.ABSENT)
-    const rate = expected ? Math.round((attended / expected) * 100) : null
-    return { date: date.slice(5), rate, isToday: date === today.value }
+    const expected = attended + countBy(list, CHECKIN_STATUS.CLOSED, CHECKIN_STATUS.ABSENT)
+    return { date: key.slice(5).replace('-', '/'), rate: expected ? Math.round(attended * 100 / expected) : null, isToday: key === today.value }
   })
 })
 
-function formatTime(value) {
-  return value ? value.slice(11, 16) : '—'
-}
+const tasks = computed(() => [
+  { label: '待处理课表', count: scheduleTodo.value, icon: 'calendar', route: 'admin-schedules' },
+  { label: '待审批补签', count: makeupTodo.value, icon: 'calendarCheck', route: 'admin-makeup' },
+])
 
 async function load() {
   loading.value = true
@@ -75,240 +67,111 @@ async function load() {
     members.value = accounts
     records.value = attendance.records
     today.value = attendance.date
-  } catch (err) {
-    errorMessage.value = err?.message || '数据加载失败,请稍后重试'
+  } catch (error) {
+    errorMessage.value = error.message || '数据加载失败，请稍后重试'
   } finally {
     loading.value = false
   }
 }
 
-async function loadScheduleTodo() {
-  try {
-    const list = await listScheduleUsers()
-    scheduleTodo.value = list.filter(
-      (u) => u.status === SCHEDULE_STATUS.PENDING || u.status === SCHEDULE_STATUS.REPARSE,
-    ).length
-  } catch {
-    scheduleTodo.value = 0
-  }
+async function loadTasks() {
+  const [schedules, requests] = await Promise.allSettled([listScheduleUsers(), listMakeupRequests()])
+  scheduleTodo.value = schedules.status === 'fulfilled' ? schedules.value.filter(
+    (item) => [SCHEDULE_STATUS.PENDING, SCHEDULE_STATUS.REPARSE].includes(item.status),
+  ).length : null
+  makeupTodo.value = requests.status === 'fulfilled' ? requests.value.filter((item) => item.status === MAKEUP_STATUS.PENDING).length : null
 }
 
-onMounted(() => {
-  load()
-  loadScheduleTodo()
-})
+onMounted(() => { load(); loadTasks() })
 </script>
 
 <template>
-  <p v-if="errorMessage" class="state-error" role="alert">
-    {{ errorMessage }}
-    <button class="link-btn" type="button" @click="load">重试</button>
+  <p v-if="errorMessage" class="notice notice--danger" role="alert">
+    <span class="notice__body">{{ errorMessage }}</span><button class="link-btn" type="button" @click="load">重试</button>
   </p>
 
-  <p v-if="scheduleTodo > 0" class="notice notice--warn todo">
-    <span class="notice__body">
-      有 <strong>{{ scheduleTodo }}</strong> 位用户的课表等待解析。
-      <RouterLink :to="{ name: 'admin-schedules' }">去处理</RouterLink>
-    </span>
-  </p>
-
-  <section class="stats" :class="{ 'is-loading': loading }">
-    <article v-for="s in stats" :key="s.label" class="stat" :class="`stat--${s.tone}`">
-      <p class="stat__label">{{ s.label }}</p>
-      <p class="stat__value">{{ loading ? '–' : s.value }}</p>
-    </article>
+  <section class="overview-metrics" aria-label="今日考勤统计">
+    <MetricCard v-for="stat in stats" :key="stat.label" :label="stat.label" :icon="stat.icon" :tone="stat.tone"
+      :value="loading || errorMessage ? '—' : stat.value" />
   </section>
 
-  <div class="grid">
-    <section class="panel">
+  <div class="overview-grid">
+    <section class="panel chart">
       <header class="panel__head">
-        <h2 class="panel__title">今日签到</h2>
-        <span class="panel__hint">共 {{ todayList.length }} 条</span>
+        <div><h2 class="panel__title">近 7 天签到率</h2><p class="chart__caption">已签到人次占已签到及已截止场次的比例</p></div>
+        <span v-if="today" class="chart__date"><AppIcon name="calendar" :size="15" />{{ today }}</span>
       </header>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>成员</th>
-              <th>节次</th>
-              <th>状态</th>
-              <th>签到时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="!loading && todayList.length === 0">
-              <td class="table__empty" colspan="4">
-                今天还没有成员签到
-              </td>
-            </tr>
-            <tr v-for="r in todayList" :key="r.id">
-              <td>
-                <span class="avatar" aria-hidden="true">{{ r.nickname.slice(0, 1) }}</span>
-                {{ r.nickname }}
-              </td>
-              <td class="table__muted">{{ formatAttendanceSection(r) }}</td>
-              <td>
-                <span class="tag" :class="`tag--${CHECKIN_TONES[r.status]}`">
-                  {{ CHECKIN_LABELS[r.status] }}
-                </span>
-              </td>
-              <td class="table__muted">{{ formatTime(r.checkin_time) }}</td>
-            </tr>
-          </tbody>
-        </table>
+      <div v-if="weekRates.length" class="chart__body">
+        <div class="chart__axis" aria-hidden="true"><span>100%</span><span>50%</span><span>0%</span></div>
+        <ul class="chart__days" aria-label="每日签到率">
+          <li v-for="day in weekRates" :key="day.date" :class="{ 'is-today': day.isToday }"
+            :aria-label="day.date + ' ' + (day.rate === null ? '暂无数据' : day.rate + '%')">
+            <div class="chart__track" :style="{ '--rate': (day.rate ?? 0) + '%' }" aria-hidden="true">
+              <span v-if="day.rate !== null" class="chart__bar"></span>
+              <span class="chart__value">{{ day.rate === null ? '—' : day.rate + '%' }}</span>
+            </div>
+            <span class="chart__day" aria-hidden="true">{{ day.date }}</span>
+          </li>
+        </ul>
       </div>
+      <p v-else class="chart__empty">{{ loading ? '读取考勤数据…' : '暂无考勤数据' }}</p>
     </section>
 
-    <section class="panel">
-      <header class="panel__head">
-        <h2 class="panel__title">近 7 天签到率</h2>
-      </header>
-      <ul class="rates">
-        <li v-for="d in weekRates" :key="d.date" class="rate" :class="{ 'is-today': d.isToday }">
-          <span class="rate__date">{{ d.date }}</span>
-          <span class="rate__track">
-            <span class="rate__fill" :style="{ width: `${d.rate ?? 0}%` }"></span>
-          </span>
-          <span class="rate__value">{{ d.rate === null ? '—' : `${d.rate}%` }}</span>
-        </li>
-      </ul>
-      <p class="rates__note">已签到人次占已签到及已截止场次的比例</p>
+    <section class="panel overview-tasks">
+      <header class="panel__head"><h2 class="panel__title">待处理事项</h2></header>
+      <RouterLink v-for="task in tasks" :key="task.route" class="task" :to="{ name: task.route }">
+        <span class="task__icon"><AppIcon :name="task.icon" /></span>
+        <strong>{{ task.label }}</strong><span class="task__count">{{ task.count ?? '—' }}</span>
+        <AppIcon name="chevron" :size="14" />
+      </RouterLink>
     </section>
   </div>
+
+  <section class="panel">
+    <header class="panel__head">
+      <h2 class="panel__title">今日签到明细</h2>
+      <RouterLink class="link-btn" :to="{ name: 'admin-records' }">全部记录 <AppIcon name="arrow" :size="15" /></RouterLink>
+    </header>
+    <p v-if="loading" class="page-loader"><span class="spinner" aria-hidden="true"></span>加载中…</p>
+    <EmptyState v-else-if="!todayList.length" icon="records" title="暂无今日签到记录" />
+    <div v-else class="table-wrap">
+      <table class="table table--records" aria-label="今日签到明细">
+        <thead><tr><th scope="col">成员</th><th scope="col">节次</th><th scope="col">状态</th><th scope="col">签到时间</th></tr></thead>
+        <tbody>
+          <tr v-for="record in todayList" :key="record.id">
+            <td><span class="avatar" aria-hidden="true">{{ record.nickname.slice(0, 1) }}</span>{{ record.nickname }}</td>
+            <td class="table__muted">{{ formatAttendanceSection(record) }}</td>
+            <td><span class="tag" :class="'tag--' + CHECKIN_TONES[record.status]">{{ CHECKIN_LABELS[record.status] }}</span></td>
+            <td class="table__muted">{{ record.checkin_time?.slice(11, 16) || '—' }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
 </template>
 
 <style scoped>
-.state-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0 0 16px;
-  padding: 9px 12px;
-  font-size: 13px;
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
-  border-radius: var(--radius-md);
-}
-
-.todo {
-  margin-bottom: 16px;
-}
-
-.todo a {
-  margin-left: 6px;
-  color: inherit;
-  font-weight: 500;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-.stats {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 16px;
-}
-
-.stats.is-loading {
-  opacity: 0.6;
-}
-
-.stat {
-  padding: 16px 18px;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.stat__label {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.stat__value {
-  margin: 6px 0 0;
-  font-family: var(--font-serif);
-  font-size: 32px;
-  line-height: 1.1;
-  font-variant-numeric: tabular-nums;
-}
-
-.stat--ok .stat__value {
-  color: #2f6b45;
-}
-
-.stat--warn .stat__value {
-  color: #8a6414;
-}
-
-.stat--info .stat__value {
-  color: #35597a;
-}
-
-.grid {
-  display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
-  gap: 16px;
-  align-items: start;
-}
-
-.rates {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  margin: 0;
-  padding: 20px;
-  list-style: none;
-}
-
-.rate {
-  display: grid;
-  grid-template-columns: 44px 1fr 40px;
-  align-items: center;
-  gap: 12px;
-  font-size: 13px;
-  color: var(--color-text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.rate.is-today {
-  color: var(--color-text);
-  font-weight: 500;
-}
-
-.rate__track {
-  height: 8px;
-  overflow: hidden;
-  background: var(--color-bg);
-  border-radius: 999px;
-}
-
-.rate__fill {
-  display: block;
-  height: 100%;
-  background: var(--color-accent);
-  border-radius: 999px;
-}
-
-.rate__value {
-  text-align: right;
-}
-
-.rates__note {
-  margin: 0;
-  padding: 0 20px 16px;
-  font-size: 12px;
-  color: var(--color-text-faint);
-}
-
-@media (max-width: 960px) {
-  .stats {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .grid {
-    grid-template-columns: 1fr;
-  }
-}
+.overview-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 2.2fr) minmax(205px, 1fr); gap: 16px; align-items: start; }
+.chart__caption { margin: 4px 0 0; color: var(--color-text-muted); font-size: 12px; }
+.chart__date { display: flex; gap: 6px; align-items: center; padding: 5px 9px; border: 1px solid var(--color-border); border-radius: 8px; color: var(--color-text-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+.chart__body { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 9px; padding: 20px 19px 16px; }
+.chart__axis { display: flex; flex-direction: column; justify-content: space-between; text-align: end; padding-bottom: 26px; line-height: 1; font-size: 10px; color: var(--color-text-muted); }
+.chart__days { --height: 120px; min-width: 0; display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); padding: 0; margin: 0; list-style: none; background: repeating-linear-gradient(to bottom, var(--color-border) 0 1px, transparent 1px 60px) top / 100% calc(var(--height) + 1px) no-repeat; }
+.chart__days li { min-width: 0; display: grid; justify-items: center; }
+.chart__track { position: relative; width: min(64%, 41px); height: var(--height); display: flex; align-items: end; }
+.chart__bar { min-height: 2px; width: 100%; height: var(--rate); background: #a4b0fb; border-radius: 5px 5px 0 0; }
+.is-today .chart__bar { background: linear-gradient(180deg, #5e72f5, #3049e8); }
+.chart__value { position: absolute; bottom: var(--rate); left: 50%; transform: translateX(-50%); padding-bottom: 3px; color: #35446d; font-size: 10px; font-weight: 650; }
+.chart__day { padding-top: 7px; color: var(--color-text-muted); font-size: 11px; }
+.is-today .chart__day { color: var(--color-accent); font-weight: 700; }
+.chart__empty { min-height: 145px; display: grid; place-items: center; margin: 0; color: var(--color-text-muted); }
+.overview-tasks { padding-bottom: 9px; }
+.task { display: flex; align-items: center; min-height: 54px; margin: 0 11px; padding: 7px 10px; border-radius: 10px; gap: 9px; color: var(--color-text-muted); text-decoration: none; }
+.task:hover { background: var(--color-accent-soft); }
+.task strong { flex: 1; color: var(--color-text); font-size: 13px; }
+.task__icon { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 9px; background: var(--color-accent-soft); color: var(--color-accent); }
+.task__count { color: var(--color-accent); font: 700 16px/1 var(--font-data); }
+@media (max-width: 1060px) { .overview-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 680px) { .overview-grid { grid-template-columns: minmax(0, 1fr); } .overview-metrics { gap: 8px; } .chart__body { padding-inline: 12px; } }
 </style>

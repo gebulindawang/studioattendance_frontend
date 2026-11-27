@@ -1,6 +1,9 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
+import PageHeading from '@/components/PageHeading.vue'
+import StatusTag from '@/components/StatusTag.vue'
 import MemberTopbar from '@/components/MemberTopbar.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import UploadMeter from '@/components/UploadMeter.vue'
@@ -34,10 +37,10 @@ const hasEffective = computed(() => (info.value?.courses.length ?? 0) > 0)
 const hint = computed(() => {
   if (!info.value) return ''
   if (info.value.status === SCHEDULE_STATUS.PENDING) {
-    return '你之前提交的课表还在等待解析。重新提交后,管理员会以最新的图片为准。'
+    return '你之前提交的课表还在等待解析。重新提交后，管理员会以最新的图片为准。'
   }
   if (hasEffective.value) {
-    return '提交后管理员需要重新解析。在处理完成前,你仍然会看到当前生效的课表。'
+    return '提交后管理员需要重新解析。在处理完成前，你仍然会看到当前生效的课表。'
   }
   return ''
 })
@@ -129,302 +132,98 @@ onBeforeUnmount(releasePreview)
 </script>
 
 <template>
-  <main class="upload">
-    <MemberTopbar title="上传课表">
-      <template #actions>
-        <button class="text-btn" type="button" @click="backHome">返回课表</button>
-      </template>
-    </MemberTopbar>
-
-    <section v-if="loading" class="panel upload__card" aria-busy="true">
-      <p class="upload__loading"><span class="spinner" aria-hidden="true"></span>加载中…</p>
+  <MemberTopbar />
+  <main class="member-page">
+    <PageHeading title="上传课表" description="提交课表截图，由管理员核对并安排本周签到。" />
+    <section v-if="loading" class="panel" aria-busy="true">
+      <p class="page-loader"><span class="spinner" aria-hidden="true"></span>读取课表状态…</p>
     </section>
-
     <section v-else-if="loadError" class="panel">
-      <EmptyState title="加载失败" :description="loadError">
-        <button class="btn btn--sm" type="button" @click="load">重新加载</button>
+      <EmptyState title="课表状态加载失败" :description="loadError" icon="alert" tone="danger">
+        <button class="btn" type="button" @click="load">重新加载</button>
       </EmptyState>
     </section>
-
-    <section v-else-if="done" class="panel">
-      <EmptyState
-        title="课表已提交"
-        description="管理员会尽快为你解析课表,解析并确认后会在“我的课表”里显示。"
-      >
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
-            <path d="m5 12.5 4.5 4.5L19 7.5" />
-          </svg>
-        </template>
-        <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
-        <button class="btn btn--sm" type="button" @click="backHome">返回我的课表</button>
-      </EmptyState>
-    </section>
-
-    <section v-else-if="exhausted" class="panel">
-      <EmptyState
-        title="上传次数已用完"
-        :description="`每位用户最多可上传 ${info.max_uploads} 次课表,你已全部用完。如果课表还有问题,请联系管理员帮你修改。`"
-      >
-        <template #icon>
-          <svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9" />
-            <path d="m6 6 12 12" />
-          </svg>
-        </template>
-        <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
-        <button class="btn btn--sm btn--secondary" type="button" @click="backHome">返回我的课表</button>
-      </EmptyState>
-    </section>
-
-    <section v-else class="panel upload__card">
-      <header class="upload__head">
-        <div>
-          <h2 class="upload__title">选择课表图片</h2>
-          <p class="upload__sub">请上传清晰、完整的课表截图,文字越清晰,解析越准确。</p>
-        </div>
-        <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
-      </header>
-
-      <p v-if="hint" class="notice notice--info"><span class="notice__body">{{ hint }}</span></p>
-
-      <div
-        v-if="!file"
-        class="dropzone"
-        :class="{ 'is-dragging': dragging, 'is-error': fileError }"
-        role="button"
-        tabindex="0"
-        @click="fileInput.click()"
-        @keydown.enter.prevent="fileInput.click()"
-        @keydown.space.prevent="fileInput.click()"
-        @dragover.prevent="dragging = true"
-        @dragleave.prevent="dragging = false"
-        @drop.prevent="onDrop"
-      >
-        <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 16V5m0 0-4 4m4-4 4 4" />
-          <path d="M5 15v3.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V15" />
-        </svg>
-        <p class="dropzone__main">点击选择图片,或将图片拖到这里</p>
-        <p class="dropzone__sub">支持 JPG、PNG、WebP,大小不超过 5 MB</p>
-      </div>
-
-      <div v-else class="preview">
-        <img class="preview__img" :src="previewUrl" alt="待上传的课表预览" />
-        <div class="preview__info">
-          <p class="preview__name">{{ file.name }}</p>
-          <p class="preview__size">{{ formatFileSize(file.size) }}</p>
-          <div v-if="uploading" class="progress" role="progressbar" :aria-valuenow="progress" aria-valuemin="0" aria-valuemax="100">
-            <span class="progress__fill" :style="{ width: `${progress}%` }"></span>
+    <div v-else class="upload-grid">
+      <section v-if="done" class="panel">
+        <EmptyState title="课表已提交" description="管理员确认后，你可以在签到周表查看可签到时段。" icon="checkCircle" tone="green">
+          <button class="btn" type="button" @click="backHome">返回签到周表</button>
+        </EmptyState>
+      </section>
+      <section v-else-if="exhausted" class="panel">
+        <EmptyState title="上传次数已用完" description="如需更新课表，请联系管理员。" icon="alert" tone="danger">
+          <button class="btn btn--secondary" type="button" @click="backHome">返回签到周表</button>
+        </EmptyState>
+      </section>
+      <section v-else class="panel upload-card">
+        <header class="panel__head"><h2 class="panel__title">课表图片</h2></header>
+        <div class="upload-card__body">
+          <p v-if="hint" class="notice notice--info">{{ hint }}</p>
+          <div v-if="!file" class="dropzone" :class="{ 'is-dragging': dragging }"
+            @dragover.prevent="dragging = true" @dragleave.prevent="dragging = false" @drop.prevent="onDrop">
+            <span class="dropzone__icon"><AppIcon name="upload" :size="26" /></span>
+            <strong>拖放课表截图到这里</strong>
+            <p>JPG、PNG 或 WebP，最大 5 MB</p>
+            <button class="btn btn--secondary" type="button" @click="fileInput.click()">选择图片</button>
           </div>
-          <p v-if="uploading" class="preview__size">上传中 {{ progress }}%</p>
-          <button v-else class="text-btn" type="button" @click="clearFile">更换图片</button>
+          <div v-else class="upload-preview">
+            <img :src="previewUrl" alt="待上传的课表预览" />
+            <div>
+              <strong>{{ file.name }}</strong>
+              <p>{{ formatFileSize(file.size) }}</p>
+              <progress v-if="uploading" :value="progress" max="100" aria-label="上传进度">{{ progress }}%</progress>
+              <button v-else class="link-btn" type="button" @click="clearFile">更换图片</button>
+            </div>
+          </div>
+          <input ref="fileInput" hidden type="file" accept="image/jpeg,image/png,image/webp" @change="onInputChange" />
+          <p v-if="fileError || submitError" class="notice notice--danger" role="alert">{{ fileError || submitError }}</p>
         </div>
-      </div>
+        <footer class="upload-card__foot">
+          <span>提交将使用 1 次上传机会</span>
+          <button class="btn" type="button" :disabled="!file || uploading" @click="submit">
+            <span v-if="uploading" class="btn__spinner" aria-hidden="true"></span>
+            <AppIcon v-else name="arrow" :size="16" />{{ uploading ? '上传中…' : '提交课表' }}
+          </button>
+        </footer>
+      </section>
 
-      <input
-        ref="fileInput"
-        class="upload__input"
-        type="file"
-        accept="image/jpeg,image/png,image/webp"
-        @change="onInputChange"
-      />
-
-      <p v-if="fileError" class="notice notice--danger" role="alert">
-        <span class="notice__body">{{ fileError }}</span>
-      </p>
-      <p v-if="submitError" class="notice notice--danger" role="alert">
-        <span class="notice__body">{{ submitError }}</span>
-      </p>
-
-      <footer class="upload__foot">
-        <span class="upload__cost">提交将消耗 1 次上传次数</span>
-        <button class="btn btn--sm" type="button" :disabled="!file || uploading" @click="submit">
-          <span v-if="uploading" class="btn__spinner" aria-hidden="true"></span>
-          {{ uploading ? '上传中…' : '提交课表' }}
-        </button>
-      </footer>
-    </section>
+      <aside class="panel upload-details" aria-label="上传状态">
+        <div class="upload-details__section">
+          <h2 class="panel__title"><AppIcon name="calendar" /> 当前课表</h2>
+          <StatusTag :status="info.status" />
+          <UploadMeter :used="info.upload_count" :max="info.max_uploads" />
+        </div>
+        <div class="upload-details__section">
+          <h2 class="panel__title">截图要求</h2>
+          <ul>
+            <li>保留星期、节次和教学周信息。</li>
+            <li>确保课程名称清晰、图片完整。</li>
+          </ul>
+        </div>
+      </aside>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.upload {
-  max-width: 680px;
-  margin: 0 auto;
-  padding: 28px 20px 48px;
-}
-
-.upload__card {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  padding: 24px;
-}
-
-.upload__loading {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  margin: 0;
-  padding: 40px 0;
-  color: var(--color-text-muted);
-}
-
-.upload__head {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-
-.upload__title {
-  margin: 0;
-  font-family: var(--font-serif);
-  font-size: 19px;
-  font-weight: 500;
-}
-
-.upload__sub {
-  margin: 4px 0 0;
-  font-size: 14px;
-  color: var(--color-text-muted);
-}
-
-.upload__input {
-  display: none;
-}
-
-.dropzone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 40px 16px;
-  color: var(--color-text-muted);
-  background: var(--color-bg);
-  border: 1.5px dashed var(--color-border-strong);
-  border-radius: var(--radius-lg);
-  cursor: pointer;
-  outline: none;
-  transition:
-    border-color 0.15s ease,
-    background-color 0.15s ease;
-}
-
-.dropzone:hover,
-.dropzone.is-dragging {
-  border-color: var(--color-accent);
-  background: #fbf3ef;
-}
-
-.dropzone:focus-visible {
-  border-color: var(--color-accent);
-  box-shadow: 0 0 0 3px var(--color-focus-ring);
-}
-
-.dropzone.is-error {
-  border-color: var(--color-danger);
-}
-
-.dropzone__main {
-  margin: 12px 0 0;
-  color: var(--color-text);
-}
-
-.dropzone__sub {
-  margin: 4px 0 0;
-  font-size: 13px;
-  color: var(--color-text-faint);
-}
-
-.preview {
-  display: flex;
-  gap: 16px;
-  padding: 12px;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.preview__img {
-  flex: none;
-  width: 120px;
-  height: 150px;
-  object-fit: cover;
-  object-position: top;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-}
-
-.preview__info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  justify-content: center;
-  gap: 4px;
-  min-width: 0;
-  flex: 1;
-}
-
-.preview__name {
-  max-width: 100%;
-  margin: 0;
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.preview__size {
-  margin: 0;
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.progress {
-  width: 100%;
-  height: 6px;
-  margin-top: 6px;
-  overflow: hidden;
-  background: var(--color-border);
-  border-radius: 999px;
-}
-
-.progress__fill {
-  display: block;
-  height: 100%;
-  background: var(--color-accent);
-  border-radius: 999px;
-  transition: width 0.12s linear;
-}
-
-.upload__foot {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.upload__cost {
-  font-size: 13px;
-  color: var(--color-text-faint);
-}
-
-@media (max-width: 520px) {
-  .upload {
-    padding: 20px 12px 32px;
-  }
-
-  .preview {
-    flex-direction: column;
-  }
-
-  .preview__img {
-    width: 100%;
-  }
-}
+.upload-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(230px, 300px); gap: 17px; align-items: start; }
+.upload-card__body { display: grid; gap: 13px; padding: 0 22px 18px; }
+.dropzone { display: grid; justify-items: center; gap: 9px; min-height: 250px; align-content: center; padding: 25px 14px; text-align: center; color: var(--color-text); background: #f7f8ff; border: 1px dashed #b1bdf7; border-radius: 14px; }
+.dropzone.is-dragging { background: #e9edff; border-color: var(--color-accent); }
+.dropzone__icon { display: grid; place-items: center; width: 55px; height: 55px; margin-bottom: 4px; border-radius: 15px; color: var(--color-accent); background: #e8ecff; }
+.dropzone strong { font-size: 16px; }
+.dropzone p, .upload-preview p { margin: 0; color: var(--color-text-muted); font-size: 12px; }
+.dropzone .btn { margin-top: 4px; }
+.upload-card__foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; padding: 15px 22px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-size: 12px; }
+.upload-preview { display: grid; grid-template-columns: minmax(85px, 145px) minmax(0, 1fr); gap: 14px; align-items: center; min-height: 220px; padding: 13px; border: 1px solid var(--color-border); border-radius: 14px; background: #f7f8fd; }
+.upload-preview img { width: 100%; height: 194px; object-fit: contain; background: white; border-radius: 8px; }
+.upload-preview strong { overflow-wrap: anywhere; }
+.upload-preview progress { accent-color: var(--color-accent); width: min(100%, 220px); }
+.upload-details__section { display: grid; gap: 12px; padding: 18px; }
+.upload-details__section + .upload-details__section { border-top: 1px solid var(--color-border); }
+.upload-details__section h2 { display: flex; align-items: center; gap: 8px; }
+.upload-details__section h2 svg { color: var(--color-accent); }
+.upload-details__section ul { padding-inline-start: 17px; margin: 0; color: var(--color-text-muted); font-size: 13px; }
+.upload-details__section li + li { margin-top: 6px; }
+@media (max-width: 830px) { .upload-grid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 620px) { .upload-card__body { padding-inline: 15px; } .upload-card__foot { padding-inline: 15px; } }
 </style>

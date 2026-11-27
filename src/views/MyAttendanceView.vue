@@ -1,6 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
+import PageHeading from '@/components/PageHeading.vue'
+import MetricCard from '@/components/MetricCard.vue'
 import MemberTopbar from '@/components/MemberTopbar.vue'
 import { getMyAttendance, submitMakeupRequest } from '@/api/checkin'
 import { CHECKIN_LABELS, CHECKIN_STATUS, CHECKIN_TONES, MAKEUP_LABELS, MAKEUP_TONES } from '@/constants/checkin'
@@ -93,156 +96,132 @@ onBeforeUnmount(() => { ++loadSequence })
 </script>
 
 <template>
-  <main class="my-attendance">
-    <MemberTopbar title="我的考勤">
-      <template #actions>
-        <RouterLink :to="{ name: 'home' }" class="btn btn--sm btn--secondary">工作室签到</RouterLink>
-      </template>
-    </MemberTopbar>
-
-    <section v-if="attendance" class="panel next-slot">
-      <header class="panel__head">
-        <h2 class="panel__title">下次签到</h2>
-        <RouterLink v-if="attendance.next" :to="{ name: 'home' }" class="link-btn">查看周表</RouterLink>
-      </header>
-      <p v-if="attendance.next" class="next-slot__detail">
-        <strong>{{ attendance.next.checkin_date.slice(0, 10) }} · {{ formatAttendanceSection(attendance.next) }}</strong>
-        <span>{{ clock(attendance.next.opens_at) }} 开放，{{ clock(attendance.next.slot_start) }} 截止</span>
-      </p>
-      <p v-else class="next-slot__detail">{{ nextMessages[attendance.week_state] || '本周暂无后续签到时段。' }}</p>
-    </section>
-
-    <form v-if="selectedRecord" class="panel makeup-form" @submit.prevent="submit">
-      <header class="panel__head">
-        <h2 class="panel__title">申请补签</h2>
-        <span class="panel__hint">{{ selectedRecord.checkin_date.slice(0, 10) }} · {{ formatAttendanceSection(selectedRecord) }}</span>
-      </header>
-      <div class="makeup-form__body">
-        <label for="makeup-reason">补签原因</label>
-        <textarea id="makeup-reason" ref="reasonInput" v-model.trim="reason" class="control"
-          rows="3" maxlength="500" required :disabled="submitting" />
-        <p v-if="submitError" class="notice notice--danger" role="alert">{{ submitError }}</p>
-        <div class="makeup-form__actions">
-          <button type="submit" class="btn btn--sm" :disabled="submitting || !reason">
-            {{ submitting ? '提交中…' : '提交申请' }}
-          </button>
-          <button type="button" class="btn btn--sm btn--secondary" :disabled="submitting" @click="selectedRecord = null">
-            取消
-          </button>
+  <MemberTopbar />
+  <main class="member-page">
+    <PageHeading title="我的考勤" description="查看个人签到记录和补签进度。" />
+    <div class="page-stack">
+      <div class="attendance-summary">
+        <section class="next-card">
+          <span class="next-card__label"><AppIcon name="clock" :size="17" /> 下次签到</span>
+          <template v-if="attendance?.next">
+            <strong>{{ attendance.next.checkin_date.slice(5, 10).replace('-', '/') }} · {{ formatAttendanceSection(attendance.next) }}</strong>
+            <div class="next-card__time">{{ clock(attendance.next.opens_at) }} 开放 · {{ clock(attendance.next.slot_start) }} 截止</div>
+          </template>
+          <p v-else>{{ attendance ? nextMessages[attendance.week_state] || '本周暂无后续签到时段。' : '—' }}</p>
+          <RouterLink :to="{ name: 'home' }">查看签到周表 <AppIcon name="arrow" :size="15" /></RouterLink>
+        </section>
+        <div class="attendance-summary__metrics" aria-label="所选月份统计">
+          <MetricCard label="已签到" icon="checkCircle" tone="green" :value="attendance && !loading ? monthStats.signed : '—'" />
+          <MetricCard label="已补签" icon="calendarCheck" :value="attendance && !loading ? monthStats.madeUp : '—'" />
+          <MetricCard label="未签到" icon="clock" tone="amber" :value="attendance && !loading ? monthStats.missed : '—'" />
         </div>
       </div>
-    </form>
 
-    <p v-if="feedback" class="notice notice--ok" role="status">{{ feedback }}</p>
-    <p v-if="loadError" class="notice notice--danger" role="alert">
-      <span class="notice__body">{{ loadError }}</span>
-      <button type="button" class="link-btn" @click="load">重试</button>
-    </p>
+      <form v-if="selectedRecord" class="panel makeup-form" @submit.prevent="submit">
+        <header class="panel__head">
+          <h2 class="panel__title">申请补签</h2>
+          <span class="panel__hint">{{ selectedRecord.checkin_date.slice(0, 10) }} · {{ formatAttendanceSection(selectedRecord) }}</span>
+        </header>
+        <div class="makeup-form__body">
+          <label for="makeup-reason">补签原因</label>
+          <textarea id="makeup-reason" ref="reasonInput" v-model.trim="reason" class="control"
+            rows="4" placeholder="请简要说明错过签到的原因" maxlength="500" required :disabled="submitting" />
+          <p v-if="submitError" class="notice notice--danger" role="alert">{{ submitError }}</p>
+          <div class="makeup-form__actions">
+            <button type="submit" class="btn btn--sm" :disabled="submitting || !reason">
+              {{ submitting ? '提交中…' : '提交申请' }}
+            </button>
+            <button type="button" class="btn btn--sm btn--secondary" :disabled="submitting" @click="selectedRecord = null">
+              取消
+            </button>
+          </div>
+        </div>
+      </form>
+      <p v-if="feedback" class="notice notice--ok" role="status"><AppIcon name="checkCircle" />{{ feedback }}</p>
+      <p v-if="loadError" class="notice notice--danger" role="alert">
+        <span class="notice__body">{{ loadError }}</span><button type="button" class="link-btn" @click="load">重试</button>
+      </p>
 
-    <section class="panel">
-      <header class="panel__head">
-        <h2 class="panel__title">历史考勤</h2>
-        <input v-model="month" type="month" class="control" aria-label="查看月份" :disabled="submitting" @change="changeMonth" />
-      </header>
-      <div v-if="attendance && !loading" class="attendance-total">
-        <span>签到 <strong>{{ monthStats.signed }}</strong></span>
-        <span>补签 <strong>{{ monthStats.madeUp }}</strong></span>
-        <span>未签到 <strong>{{ monthStats.missed }}</strong></span>
-      </div>
-      <div class="table-wrap">
-        <table class="table history-table">
-          <thead>
-            <tr>
-              <th scope="col">日期</th>
-              <th scope="col">节次</th>
-              <th scope="col">签到状态</th>
-              <th scope="col">签到时间</th>
-              <th scope="col">补签进度</th>
-              <th scope="col">操作</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="loading"><td colspan="6" class="table__empty">加载中…</td></tr>
-            <tr v-else-if="loadError"><td colspan="6" class="table__empty">暂时无法读取记录</td></tr>
-            <tr v-else-if="!attendance?.records.length"><td colspan="6" class="table__empty">本月暂无考勤记录</td></tr>
-            <tr v-else v-for="record in attendance.records" :key="record.id">
-              <td>{{ record.checkin_date.slice(0, 10) }}</td>
-              <td>{{ formatAttendanceSection(record) }}</td>
-              <td><span class="tag" :class="`tag--${CHECKIN_TONES[record.status] || 'muted'}`">{{ CHECKIN_LABELS[record.status] || '未知' }}</span></td>
-              <td>{{ clock(record.checkin_time) }}</td>
-              <td>
-                <template v-if="record.makeup_request">
-                  <span class="tag" :class="`tag--${MAKEUP_TONES[record.makeup_request.status]}`">
-                    {{ MAKEUP_LABELS[record.makeup_request.status] }}
-                  </span>
-                  <p v-if="record.makeup_request.review_note" class="review-note">{{ record.makeup_request.review_note }}</p>
-                </template>
-                <span v-else class="table__muted">—</span>
-              </td>
-              <td>
-                <button v-if="record.can_request_makeup" class="link-btn" type="button" :disabled="submitting" @click="startRequest(record)">
-                  {{ record.makeup_request ? '重新申请' : '申请补签' }}
-                </button>
-                <span v-else class="table__muted">—</span>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+      <section class="panel">
+        <header class="panel__head">
+          <h2 class="panel__title">历史考勤</h2>
+          <input v-model="month" type="month" class="control" aria-label="查看月份" :disabled="submitting" @change="changeMonth" />
+        </header>
+        <div class="table-wrap">
+          <table class="table history-table" aria-label="月度考勤记录">
+            <thead>
+              <tr>
+                <th scope="col">日期</th>
+                <th scope="col">节次</th>
+                <th scope="col">签到状态</th>
+                <th scope="col">签到时间</th>
+                <th scope="col">补签进度</th>
+                <th scope="col">操作</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="loading"><td colspan="6" class="table__empty">加载中…</td></tr>
+              <tr v-else-if="loadError"><td colspan="6" class="table__empty">暂时无法读取记录</td></tr>
+              <tr v-else-if="!attendance?.records.length"><td colspan="6" class="table__empty">本月暂无考勤记录</td></tr>
+              <tr v-else v-for="record in attendance.records" :key="record.id">
+                <td class="history-date">{{ record.checkin_date.slice(0, 10) }}</td>
+                <td>{{ formatAttendanceSection(record) }}</td>
+                <td><span class="tag" :class="`tag--${CHECKIN_TONES[record.status] || 'muted'}`">{{ CHECKIN_LABELS[record.status] || '未知' }}</span></td>
+                <td class="history-clock" :class="{ 'is-empty': !record.checkin_time }">{{ clock(record.checkin_time) }}</td>
+                <td class="history-review" :class="{ 'is-empty': !record.makeup_request }">
+                  <template v-if="record.makeup_request">
+                    <span class="tag" :class="`tag--${MAKEUP_TONES[record.makeup_request.status]}`">
+                      {{ MAKEUP_LABELS[record.makeup_request.status] }}
+                    </span>
+                    <p v-if="record.makeup_request.review_note" class="review-note">{{ record.makeup_request.review_note }}</p>
+                  </template>
+                  <span v-else class="table__muted">—</span>
+                </td>
+                <td class="history-action" :class="{ 'is-empty': !record.can_request_makeup }">
+                  <button v-if="record.can_request_makeup" class="link-btn" type="button" :disabled="submitting" @click="startRequest(record)">
+                    {{ record.makeup_request ? '重新申请' : '申请补签' }}
+                  </button>
+                  <span v-else class="table__muted">—</span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
   </main>
 </template>
 
 <style scoped>
-.my-attendance {
-  max-width: 1120px;
-  margin: 0 auto;
-  padding: 28px 20px 48px;
-}
+.attendance-summary { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 2fr); gap: 14px; }
+.attendance-summary__metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.next-card { display: grid; align-content: center; gap: 5px; padding: 16px 20px; background: #171f49; color: #fff; border-radius: var(--radius-lg); background-image: radial-gradient(ellipse at 100% 0, #394fbd, transparent 78%); }
+.next-card__label, .next-card__time, .next-card p { color: #dce4ff; font-size: 12px; margin: 0; }
+.next-card__label, .next-card a { display: flex; align-items: center; gap: 7px; width: fit-content; }
+.next-card strong { font-size: 19px; }
+.next-card a { font-size: 12px; text-underline-offset: 4px; margin-top: 4px; }
+.makeup-form { border-color: #ced6fe; }
+.makeup-form__body { display: grid; gap: 10px; padding: 0 22px 20px; }
+.makeup-form__body label { font-size: 13px; font-weight: 650; }
+.makeup-form__body textarea { width: 100%; resize: vertical; }
+.makeup-form__actions { display: flex; gap: 8px; justify-content: end; }
+.history-date { font-variant-numeric: tabular-nums; }
+.review-note { max-width: 220px; margin: 5px 0 0; color: var(--color-text-muted); overflow-wrap: anywhere; white-space: pre-wrap; }
 
-.next-slot,
-.makeup-form,
-.my-attendance > .notice {
-  margin-bottom: 16px;
+@media (max-width: 800px) {
+  .attendance-summary { grid-template-columns: minmax(0, 1fr); }
 }
-
-.next-slot__detail,
-.attendance-total {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px 20px;
-  margin: 0;
-  padding: 12px 20px;
-  color: var(--color-text-muted);
-}
-
-.makeup-form__body {
-  display: grid;
-  gap: 10px;
-  padding: 14px 20px;
-}
-
-.makeup-form__body textarea {
-  height: auto;
-  min-height: 80px;
-  padding: 8px 12px;
-  resize: vertical;
-}
-
-.makeup-form__actions {
-  display: flex;
-  gap: 8px;
-}
-
-.history-table {
-  min-width: 660px;
-}
-
-.review-note {
-  max-width: 220px;
-  margin: 5px 0 0;
-  color: var(--color-text-muted);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
+@media (max-width: 630px) {
+  .attendance-summary__metrics { gap: 7px; }
+  .history-table, .history-table tbody { display: block; }
+  .history-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .history-table tbody tr { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); padding: 10px 15px; gap: 6px; align-items: center; border-top: 1px solid var(--color-border); }
+  .history-table tbody td { padding: 1px 0; border: 0; background: transparent; }
+  .history-table tbody td.table__empty { grid-column: 1 / -1; padding: 30px 0; }
+  .history-table tbody td:nth-child(3) { justify-self: end; }
+  .history-table tbody .history-action { justify-self: end; }
+  .history-clock { color: var(--color-text-muted); font-variant-numeric: tabular-nums; }
+  .history-review { grid-column: auto / span 1; }
+  .history-table .is-empty { display: none; }
 }
 </style>

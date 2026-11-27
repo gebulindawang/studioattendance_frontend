@@ -1,4 +1,7 @@
 <script setup>
+import AppIcon from '@/components/AppIcon.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import SearchField from '@/components/SearchField.vue'
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import StatusTag from '@/components/StatusTag.vue'
@@ -94,23 +97,22 @@ onMounted(load)
 </script>
 
 <template>
-  <section v-if="todoCount > 0 && !loading" class="notice notice--warn todo">
-    <span class="notice__body">
-      有 <strong>{{ todoCount }}</strong> 位用户的课表等待你处理,已排在列表最前面。
-    </span>
+  <section v-if="todoCount > 0 && !loading" class="queue-note">
+    <span class="queue-note__icon"><AppIcon name="calendar" :size="22" /></span>
+    <div><strong>{{ todoCount }} 位成员的课表待处理</strong><p>待解析的课表已排在列表前面。</p></div>
   </section>
 
   <section class="panel">
-    <div class="toolbar">
-      <div class="tabs" role="tablist" aria-label="按课表状态筛选">
+    <header class="panel__head"><h2 class="panel__title">成员课表</h2><span class="panel__hint">{{ rows.length }} 位成员</span></header>
+    <div class="toolbar schedule-filters">
+      <div class="tabs" role="group" aria-label="按课表状态筛选">
         <button
           v-for="t in TABS"
           :key="t.value"
           class="tabs__item"
           :class="{ 'is-active': tab === t.value }"
           type="button"
-          role="tab"
-          :aria-selected="tab === t.value"
+          :aria-pressed="tab === t.value"
           @click="tab = t.value"
         >
           {{ t.label }}
@@ -118,13 +120,7 @@ onMounted(load)
         </button>
       </div>
       <span class="toolbar__spacer"></span>
-      <input
-        v-model="keyword"
-        class="control"
-        type="search"
-        placeholder="搜索昵称或账号"
-        aria-label="搜索用户"
-      />
+      <SearchField v-model="keyword" placeholder="搜索昵称或账号" label="搜索用户" />
     </div>
 
     <p v-if="errorMessage" class="list-error" role="alert">
@@ -133,7 +129,7 @@ onMounted(load)
     </p>
 
     <div class="table-wrap">
-      <table class="table">
+      <table class="table table--records" aria-label="成员课表">
         <thead>
           <tr>
             <th>用户</th>
@@ -149,7 +145,7 @@ onMounted(load)
             <td class="table__empty" colspan="6">加载中…</td>
           </tr>
           <tr v-else-if="rows.length === 0">
-            <td class="table__empty" colspan="6">没有符合条件的用户</td>
+            <td class="queue-empty" colspan="6"><EmptyState title="没有符合条件的成员" /></td>
           </tr>
           <template v-else>
             <tr
@@ -160,9 +156,10 @@ onMounted(load)
               @click="open(u)"
             >
               <td>
-                <span class="avatar" aria-hidden="true">{{ u.nickname.slice(0, 1) }}</span>
-                {{ u.nickname }}
-                <span class="table__muted username">{{ u.username }}</span>
+                <span class="person">
+                  <span class="avatar" aria-hidden="true">{{ u.nickname.slice(0, 1) }}</span>
+                  <span><strong class="person__name">{{ u.nickname }}</strong><small class="person__detail">{{ u.username }}</small></span>
+                </span>
               </td>
               <td><StatusTag :status="u.status" /></td>
               <td>
@@ -202,98 +199,20 @@ onMounted(load)
 </template>
 
 <style scoped>
-.todo {
-  margin-bottom: 16px;
-}
-
-.tabs {
-  display: inline-flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.tabs__item {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 32px;
-  padding: 0 12px;
-  font-size: 14px;
-  color: var(--color-text-muted);
-  background: none;
-  border: 0;
-  border-radius: var(--radius-md);
-  cursor: pointer;
-  transition:
-    background-color 0.15s ease,
-    color 0.15s ease;
-}
-
-.tabs__item:hover {
-  background: var(--color-bg);
-  color: var(--color-text);
-}
-
-.tabs__item.is-active {
-  background: #f4e2da;
-  color: #85402a;
-  font-weight: 500;
-}
-
-.tabs__item:focus-visible {
-  outline: none;
-  box-shadow: 0 0 0 3px var(--color-focus-ring);
-}
-
-.tabs__count {
-  font-size: 12px;
-  font-variant-numeric: tabular-nums;
-  opacity: 0.75;
-}
-
-.list-error {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0;
-  padding: 9px 20px;
-  font-size: 13px;
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
-}
-
-.username {
-  margin-left: 8px;
-  font-size: 12px;
-}
-
-.row.is-clickable {
-  cursor: pointer;
-}
-
-.is-full {
-  color: var(--color-danger);
-  font-weight: 500;
-}
-
-.full-tag {
-  margin-left: 8px;
-}
-
-.no-upload {
-  color: var(--color-text-faint);
-}
-
-.row__action {
-  color: var(--color-accent);
-  font-weight: 500;
-}
-
-.row__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  white-space: nowrap;
-}
-
+.queue-note { display: flex; align-items: center; gap: 12px; padding: 15px 19px; background: #eaf0ff; border: 1px solid #d7e1ff; border-radius: var(--radius-lg); color: #233a91; }
+.queue-note__icon { display: grid; flex: 0 0 auto; place-items: center; width: 39px; height: 39px; background: #dce5ff; border-radius: 11px; }
+.queue-note strong { font-size: 14px; }
+.queue-note p { margin: 2px 0 0; font-size: 12px; }
+.tabs { display: flex; flex-wrap: wrap; gap: 3px; }
+.tabs__item { display: flex; gap: 6px; align-items: center; min-height: 36px; padding: 5px 9px; border: 0; background: transparent; border-radius: 8px; color: var(--color-text-muted); font-size: 12px; font-weight: 650; cursor: pointer; }
+.tabs__item:hover, .tabs__item.is-active { background: var(--color-accent-soft); color: var(--color-accent); }
+.tabs__count { color: inherit; font-variant-numeric: tabular-nums; }
+.row.is-clickable { cursor: pointer; }
+.row__actions, .full-tag { white-space: nowrap; }
+.row__actions { display: flex; gap: 4px; }
+.full-tag { margin-inline-start: 5px; }
+.is-full, .list-error { color: var(--color-danger); }
+.list-error { display: flex; align-items: center; margin: 0 15px 12px; padding: 8px 12px; border-radius: var(--radius-md); background: var(--color-danger-bg); }
+.queue-empty { padding-block: 0; }
+@media (max-width: 650px) { .schedule-filters .toolbar__spacer { display: none; } }
 </style>

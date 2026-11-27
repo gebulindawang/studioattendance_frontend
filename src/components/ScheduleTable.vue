@@ -130,7 +130,7 @@ const year = computed(() => props.monday.getFullYear())
 }
 
 .schedule__grid {
-  --row-height: 64px;
+  --row-height: 59px;
   display: grid;
   grid-template-columns: 64px repeat(7, minmax(96px, 1fr));
   /* 行数取决于后端节次配置,由 gridStyle 内联覆盖 */
@@ -211,7 +211,7 @@ const year = computed(() => props.monday.getFullYear())
 }
 
 .schedule__cell.is-today {
-  background: rgba(201, 100, 66, 0.04);
+  background: #f0f3ff;
 }
 
 .schedule__time.is-pair-end,
@@ -227,10 +227,11 @@ const year = computed(() => props.monday.getFullYear())
 .course {
   z-index: 1;
   min-width: 0;
-  margin: 3px;
+  margin: 4px;
   padding: 7px 8px;
   overflow: hidden;
   background: var(--course-bg);
+  border-inline-start: 3px solid color-mix(in srgb, var(--course-fg) 44%, transparent);
   color: var(--course-fg);
   border-radius: var(--radius-md);
   cursor: default;

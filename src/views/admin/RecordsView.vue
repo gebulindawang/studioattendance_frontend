@@ -1,4 +1,6 @@
 <script setup>
+import SearchField from '@/components/SearchField.vue'
+import AppIcon from '@/components/AppIcon.vue'
 import { computed, onMounted, ref } from 'vue'
 import { getCheckinRecords, getMembers } from '@/api/admin'
 import { generateWeekAttendance } from '@/api/checkin'
@@ -92,13 +94,16 @@ onMounted(() => {
 <template>
   <section class="panel generation">
     <header class="panel__head">
-      <h2 class="panel__title">本周签到表</h2>
+      <div class="generation__heading">
+        <span class="generation__icon"><AppIcon name="calendarCheck" :size="24" /></span>
+        <div><h2 class="panel__title">本周签到表</h2><p>为已确认课表的成员生成本周可签到时段。</p></div>
+      </div>
       <button class="btn btn--sm" type="button" :disabled="generating || !selectedIds.length" @click="generate">
         {{ generating ? '生成中…' : '生成所选成员的签到表' }}
       </button>
     </header>
     <details v-if="members.length" class="generation__members">
-      <summary>已选 {{ selectedIds.length }} / {{ members.length }} 位成员</summary>
+      <summary>成员范围 <span>已选 {{ selectedIds.length }} / {{ members.length }} 位</span></summary>
       <div class="generation__choices">
         <label v-for="member in members" :key="member.id">
           <input v-model="selectedIds" type="checkbox" :value="member.id" :disabled="generating" />
@@ -122,15 +127,10 @@ onMounted(() => {
   </section>
 
   <section class="panel">
+    <header class="panel__head"><h2 class="panel__title">签到明细</h2><span class="panel__hint">{{ filtered.length }} 条记录</span></header>
     <div class="toolbar">
       <input v-model="dateFilter" class="control" type="date" aria-label="按日期筛选" />
-      <input
-        v-model="keyword"
-        class="control"
-        type="search"
-        placeholder="搜索成员昵称"
-        aria-label="搜索成员"
-      />
+      <SearchField v-model="keyword" placeholder="搜索成员昵称" label="搜索成员" />
       <select v-model="statusFilter" class="control" aria-label="按状态筛选">
         <option value="">全部状态</option>
         <option v-for="[value, label] in statusOptions" :key="value" :value="value">
@@ -138,14 +138,15 @@ onMounted(() => {
         </option>
       </select>
       <button class="link-btn" type="button" @click="reset">重置</button>
-      <span class="toolbar__spacer"></span>
-      <span class="panel__hint">共 {{ filtered.length }} 条</span>
+
     </div>
 
-    <p v-if="errorMessage" class="state-error" role="alert">{{ errorMessage }}</p>
+    <p v-if="errorMessage" class="notice notice--danger records-error" role="alert">
+      <span class="notice__body">{{ errorMessage }}</span><button class="link-btn" type="button" @click="load">重试</button>
+    </p>
 
     <div class="table-wrap">
-      <table class="table">
+      <table class="table table--records" aria-label="签到明细">
         <thead>
           <tr>
             <th>日期</th>
@@ -187,38 +188,17 @@ onMounted(() => {
 </template>
 
 <style scoped>
-.generation {
-  margin-bottom: 16px;
-}
-
-.generation__members,
-.generation__result {
-  padding: 10px 20px;
-  font-size: 14px;
-}
-
-.generation__choices {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 12px 18px;
-  padding-top: 10px;
-}
-
-.generation__choices label {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-}
-
-.generation__result p {
-  margin: 0;
-}
-
-.state-error {
-  margin: 0;
-  padding: 9px 20px;
-  font-size: 13px;
-  color: var(--color-danger);
-  background: var(--color-danger-bg);
-}
+.generation { background: linear-gradient(110deg, #fff 40%, #edf1ff); border-color: #dbe2fc; }
+.generation__heading { display: flex; gap: 12px; align-items: center; }
+.generation__heading p { margin: 4px 0 0; color: var(--color-text-muted); font-size: 12px; }
+.generation__icon { display: grid; flex: 0 0 auto; place-items: center; width: 47px; height: 47px; border-radius: 13px; color: var(--color-accent); background: #e7ecff; }
+.generation__members, .generation__result { margin: 0 22px 16px; padding: 10px 12px; background: #fff; border: 1px solid var(--color-border); border-radius: 10px; }
+.generation__members summary { cursor: pointer; font-weight: 650; color: var(--color-text); }
+.generation__members summary span { color: var(--color-text-muted); margin-inline-start: 5px; font-weight: 400; font-size: 12px; }
+.generation__choices { display: flex; flex-wrap: wrap; gap: 7px 13px; max-height: 170px; overflow: auto; padding-top: 12px; }
+.generation__choices label { display: inline-flex; align-items: center; gap: 5px; }
+.generation__choices input { accent-color: var(--color-accent); }
+.generation__result p, .generation__result ul { margin: 4px 0; }
+.state-error { margin: 0 22px 12px; color: var(--color-danger); }
+.records-error { margin: 0 14px 12px; }
 </style>

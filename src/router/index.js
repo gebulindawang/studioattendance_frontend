@@ -5,12 +5,15 @@ import { ROLE } from '@/constants/role'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
+  scrollBehavior(_to, _from, savedPosition) {
+    return savedPosition || { top: 0 }
+  },
   routes: [
     {
       path: '/',
       name: 'home',
       component: () => import('../views/HomeView.vue'),
-      meta: { title: '首页', requiresAuth: true },
+      meta: { title: '签到周表', requiresAuth: true },
     },
     {
       path: '/upload',

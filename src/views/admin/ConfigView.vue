@@ -1,4 +1,5 @@
 <script setup>
+import AppIcon from '@/components/AppIcon.vue'
 import { computed, onMounted, ref } from 'vue'
 import EmptyState from '@/components/EmptyState.vue'
 import { useTermStore } from '@/stores/term'
@@ -139,127 +140,91 @@ onMounted(load)
       <span class="notice__body">{{ saveError }}</span>
     </p>
     <p v-else-if="saved" class="notice notice--ok" role="status">
-      <span class="notice__body">配置已保存,课表与签到窗口会立即按新配置计算。</span>
+      <span class="notice__body">学期与节次配置已保存。</span>
     </p>
 
-    <section class="panel">
-      <header class="panel__head">
-        <h2 class="panel__title">学期规则</h2>
-        <span class="panel__hint">决定「第几周」的计算基准与周数上限</span>
-      </header>
-      <div class="cfg__row">
-        <label class="cfg__field">
-          <span class="cfg__label">开始日期</span>
-          <input v-model="form.startDate" class="control" type="date" />
-        </label>
-        <label class="cfg__field">
-          <span class="cfg__label">结束日期</span>
-          <input v-model="form.endDate" class="control" type="date" />
-        </label>
-        <label class="cfg__field">
-          <span class="cfg__label">总周数</span>
-          <input v-model.number="form.totalWeeks" class="control" type="number" min="1" max="30" />
-        </label>
-      </div>
-    </section>
+    <form class="page-stack config-form" novalidate @submit.prevent="save">
+      <section class="panel">
+        <header class="panel__head">
+          <div class="config-heading"><span><AppIcon name="calendar" /></span><div><h2 class="panel__title">学期规则</h2>
+            <p class="panel__hint">设定教学周的计算范围。</p></div></div>
+        </header>
+        <div class="cfg__row">
+          <label class="cfg__field">
+            <span class="cfg__label">开始日期</span>
+            <input v-model="form.startDate" class="control" type="date" />
+          </label>
+          <label class="cfg__field">
+            <span class="cfg__label">结束日期</span>
+            <input v-model="form.endDate" class="control" type="date" />
+          </label>
+          <label class="cfg__field">
+            <span class="cfg__label">总周数</span>
+            <input v-model.number="form.totalWeeks" class="control" type="number" min="1" max="30" />
+          </label>
+        </div>
+      </section>
 
-    <section class="panel">
-      <header class="panel__head">
-        <h2 class="panel__title">节次时间</h2>
-        <span class="panel__hint">
-          签到使用第 1–{{ sectionCount }} 节，每 {{ SECTIONS_PER_BLOCK }} 节共用一组时间
-        </span>
-      </header>
-      <div class="table-wrap">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>节次</th>
-              <th>上课时间</th>
-              <th>下课时间</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-if="form.blocks.length === 0">
-              <td class="table__empty" colspan="3">暂无节次数据</td>
-            </tr>
-            <tr v-for="b in form.blocks" :key="b.index">
-              <td class="table__muted">{{ formatSectionPair(b.index) }}</td>
-              <td>
-                <input v-model="b.start" class="control cfg__time" type="time" step="60" aria-label="上课时间" />
-              </td>
-              <td>
-                <input v-model="b.end" class="control cfg__time" type="time" step="60" aria-label="下课时间" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-      <div class="cfg__block-actions">
-        <button class="btn btn--sm btn--secondary" type="button"
-          :disabled="saving || nextBlockIndex === undefined" @click="addBlock">
-          添加节次
+      <section class="panel">
+        <header class="panel__head">
+          <div class="config-heading"><span><AppIcon name="clock" /></span><div><h2 class="panel__title">节次时间</h2>
+            <p class="panel__hint">第 1–{{ sectionCount }} 节，每 {{ SECTIONS_PER_BLOCK }} 节共用一组时间。</p></div></div>
+        </header>
+        <div class="table-wrap">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>节次</th>
+                <th>上课时间</th>
+                <th>下课时间</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="form.blocks.length === 0">
+                <td class="table__empty" colspan="3">暂无节次数据</td>
+              </tr>
+              <tr v-for="b in form.blocks" :key="b.index">
+                <td class="table__muted">{{ formatSectionPair(b.index) }}</td>
+                <td>
+                  <input v-model="b.start" class="control cfg__time" type="time" step="60" aria-label="上课时间" />
+                </td>
+                <td>
+                  <input v-model="b.end" class="control cfg__time" type="time" step="60" aria-label="下课时间" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="cfg__block-actions">
+          <button class="btn btn--sm btn--secondary" type="button"
+            :disabled="saving || nextBlockIndex === undefined" @click="addBlock">
+            添加节次
+          </button>
+        </div>
+      </section>
+
+      <footer class="panel cfg__actions">
+        <button class="btn btn--secondary" type="button" :disabled="saving" @click="resetForm">撤销修改</button>
+        <button class="btn" type="submit" :disabled="saving">
+          <span v-if="saving" class="btn__spinner" aria-hidden="true"></span>
+          <AppIcon v-else name="check" :size="16" />{{ saving ? '保存中…' : '保存配置' }}
         </button>
-      </div>
-    </section>
-
-    <div class="cfg__actions">
-      <button class="btn" type="button" :disabled="saving" @click="save">
-        <span v-if="saving" class="btn__spinner" aria-hidden="true"></span>
-        {{ saving ? '保存中…' : '保存配置' }}
-      </button>
-      <button class="btn btn--secondary" type="button" :disabled="saving" @click="resetForm">
-        撤销修改
-      </button>
-    </div>
+      </footer>
+    </form>
   </template>
 </template>
 
 <style scoped>
-.cfg__block-actions {
-  padding: 12px 20px 16px;
-}
-
-.panel + .panel,
-.notice + .panel {
-  margin-top: 16px;
-}
-
-.cfg__row {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  padding: 16px 20px 20px;
-}
-
-.cfg__field {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  min-width: 0;
-}
-
-.cfg__label {
-  font-size: 13px;
-  color: var(--color-text-muted);
-}
-
-.cfg__time {
-  width: 120px;
-  font-variant-numeric: tabular-nums;
-}
-
-.cfg__actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-@media (max-width: 720px) {
-  .cfg__row {
-    grid-template-columns: 1fr;
-    gap: 12px;
-  }
-}
+.config-form { max-width: 920px; }
+.config-heading { display: flex; align-items: center; gap: 12px; }
+.config-heading > span { display: grid; place-items: center; width: 37px; height: 37px; border-radius: 10px; background: var(--color-accent-soft); color: var(--color-accent); }
+.config-heading p { margin: 3px 0 0; }
+.cfg__row { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; padding: 0 22px 20px; }
+.cfg__field { display: grid; gap: 6px; min-width: 0; }
+.cfg__label { color: var(--color-text-muted); font-size: 13px; }
+.cfg__time { width: min(110px, 100%); font-variant-numeric: tabular-nums; }
+.cfg__block-actions { padding: 13px 22px; border-top: 1px solid var(--color-border); }
+.cfg__actions { display: flex; justify-content: end; gap: 8px; padding: 14px 18px; }
+.loading { display: flex; align-items: center; justify-content: center; gap: 9px; margin: 0; padding: 52px 0; color: var(--color-text-muted); }
+@media (max-width: 680px) { .cfg__row { grid-template-columns: minmax(0, 1fr); padding-inline: 16px; } .cfg__time { width: 100%; max-width: 110px; } .table th, .table td { padding-inline: 7px; } }
 </style>

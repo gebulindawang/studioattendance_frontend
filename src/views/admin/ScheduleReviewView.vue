@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { RouterLink, useRoute } from 'vue-router'
+import AppIcon from '@/components/AppIcon.vue'
 import ScheduleTable from '@/components/ScheduleTable.vue'
 import StatusTag from '@/components/StatusTag.vue'
 import EmptyState from '@/components/EmptyState.vue'
@@ -45,7 +46,7 @@ const savedNow = ref(false)
 
 const uploadIndex = ref(0)
 const draftImageId = ref(0)
-const lightbox = ref(false)
+const lightbox = ref(null)
 
 const previewWeek = ref(1)
 
@@ -232,26 +233,23 @@ async function save() {
   }
 }
 
-function onKeydown(e) {
-  if (e.key === 'Escape') lightbox.value = false
+function openLightbox() {
+  lightbox.value?.showModal()
 }
 
-onMounted(() => {
-  window.addEventListener('keydown', onKeydown)
-  load()
-})
+function closeLightbox() {
+  lightbox.value?.close()
+}
 
+onMounted(load)
 onBeforeUnmount(() => {
   alive = false
-  window.removeEventListener('keydown', onKeydown)
 })
 </script>
 
 <template>
   <RouterLink class="back" :to="{ name: 'admin-schedules' }">
-    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-      <path d="m15 18-6-6 6-6" />
-    </svg>
+    <AppIcon name="back" :size="15" />
     返回课表管理
   </RouterLink>
 
@@ -293,17 +291,17 @@ onBeforeUnmount(() => {
       </dl>
     </section>
 
-    <div class="top">
+    <div class="top" :class="{ 'top--review': phase === 'review' }">
       <section class="panel viewer">
         <header class="panel__head">
-          <h2 class="panel__title">用户上传的课表图片</h2>
+          <h2 class="panel__title"><AppIcon name="image" :size="17" /> 课表原图</h2>
           <span v-if="uploads.length" class="panel__hint">第 {{ uploadIndex + 1 }} / {{ uploads.length }} 次</span>
         </header>
 
         <div v-if="currentUpload" class="viewer__body">
-          <button class="viewer__stage" type="button" aria-label="查看大图" @click="lightbox = true">
+          <button class="viewer__stage" type="button" aria-label="查看大图" aria-haspopup="dialog" @click="openLightbox">
             <img :src="currentUpload.url" alt="用户上传的课表" />
-            <span class="viewer__zoom">点击查看大图</span>
+            <span class="viewer__zoom"><AppIcon name="maximize" :size="14" />查看大图</span>
           </button>
           <p class="viewer__time">上传于 {{ formatDateTime(currentUpload.uploaded_at) }}</p>
 
@@ -327,16 +325,19 @@ onBeforeUnmount(() => {
 
       <section class="panel flow">
         <header class="panel__head">
-          <h2 class="panel__title">课表解析</h2>
-          <span class="panel__hint">AI 解析</span>
+          <h2 class="panel__title"><AppIcon name="spark" :size="17" /> 解析与确认</h2>
         </header>
 
         <div class="flow__body">
+          <ol class="review-steps" aria-label="课表处理进度">
+            <li :class="{ 'is-current': ['idle', 'recognizing', 'failed'].includes(phase) }">
+              <AppIcon name="spark" :size="15" /> 识别
+            </li>
+            <li :class="{ 'is-current': phase === 'review' }"><AppIcon name="records" :size="15" /> 校对</li>
+            <li :class="{ 'is-current': phase === 'saved' }"><AppIcon name="checkCircle" :size="15" /> 生效</li>
+          </ol>
           <template v-if="phase === 'idle'">
-            <p class="flow__text">
-              点击开始后,AI 会读取课表图片并整理成结构化的课程数据。
-              解析结果<strong>不会直接生效</strong>,需要你逐条核对并确认后才会保存。
-            </p>
+            <p class="flow__text">使用 AI 提取课程信息，逐条校对后再确认生效。</p>
             <p v-if="hasEffective" class="notice notice--warn">
               <span class="notice__body">
                 该用户已有 {{ detail.courses.length }} 门生效课程,确认新的解析结果后会被覆盖。
@@ -350,7 +351,6 @@ onBeforeUnmount(() => {
               <span class="spinner" aria-hidden="true"></span>
               AI 正在解析课表图片…
             </p>
-            <p class="flow__hint">AI 解析通常需要十几秒,请稍候…</p>
           </template>
 
           <template v-else-if="phase === 'failed'">
@@ -519,10 +519,10 @@ onBeforeUnmount(() => {
     </section>
   </template>
 
-  <div v-if="lightbox && currentUpload" class="lightbox" role="dialog" aria-modal="true" aria-label="课表大图" @click="lightbox = false">
+  <dialog v-if="currentUpload" ref="lightbox" class="lightbox" aria-label="课表大图" @click.self="closeLightbox">
     <img :src="currentUpload.url" alt="用户上传的课表大图" @click.stop />
-    <button class="lightbox__close" type="button" aria-label="关闭" @click="lightbox = false">×</button>
-  </div>
+    <button class="lightbox__close" type="button" aria-label="关闭" @click="closeLightbox"><AppIcon name="close" /></button>
+  </dialog>
 </template>
 
 <style scoped>
@@ -530,7 +530,8 @@ onBeforeUnmount(() => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  margin-bottom: 14px;
+  margin-bottom: 0;
+  width: fit-content;
   font-size: 14px;
   color: var(--color-text-muted);
   text-decoration: none;
@@ -551,12 +552,6 @@ onBeforeUnmount(() => {
   color: var(--color-text-muted);
 }
 
-.panel + .panel,
-.top,
-.top + .panel {
-  margin-top: 16px;
-}
-
 .user {
   display: flex;
   align-items: center;
@@ -564,6 +559,8 @@ onBeforeUnmount(() => {
   gap: 20px;
   flex-wrap: wrap;
   padding: 16px 20px;
+  border-color: #dce3fc;
+  background: linear-gradient(108deg, #fff 46%, #eef1ff);
 }
 
 .user__main {
@@ -581,7 +578,7 @@ onBeforeUnmount(() => {
 
 .user__name {
   margin: 0;
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .user__sub {
@@ -632,13 +629,17 @@ onBeforeUnmount(() => {
   position: relative;
   display: block;
   width: 100%;
-  height: 360px;
+  height: clamp(210px, 28vw, 345px);
   padding: 0;
   overflow: hidden;
   background: var(--color-bg);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
   cursor: zoom-in;
+}
+
+.top--review .viewer__stage {
+  height: clamp(188px, 21vw, 252px);
 }
 
 .viewer__stage img {
@@ -649,6 +650,9 @@ onBeforeUnmount(() => {
 }
 
 .viewer__zoom {
+  display: flex;
+  align-items: center;
+  gap: 5px;
   position: absolute;
   right: 10px;
   bottom: 10px;
@@ -735,6 +739,12 @@ onBeforeUnmount(() => {
 .flow__body .notice {
   width: 100%;
 }
+
+.viewer .panel__title, .flow .panel__title { display: flex; align-items: center; gap: 7px; }
+.viewer .panel__title svg, .flow .panel__title svg { color: var(--color-accent); }
+.review-steps { width: 100%; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; padding: 4px; margin: 0; list-style: none; border-radius: 11px; background: #f1f3fa; }
+.review-steps li { display: flex; justify-content: center; align-items: center; min-height: 34px; gap: 5px; border-radius: 8px; color: var(--color-text-muted); font-size: 12px; }
+.review-steps li.is-current { background: #fff; color: var(--color-accent); font-weight: 700; box-shadow: 0 1px 4px #23347516; }
 
 .flow__text {
   margin: 0;
@@ -945,13 +955,25 @@ onBeforeUnmount(() => {
 .lightbox {
   position: fixed;
   inset: 0;
-  z-index: 50;
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  max-height: none;
+  margin: 0;
+  padding: 48px clamp(16px, 4vw, 48px);
+  background: transparent;
+  border: 0;
+  cursor: zoom-out;
+}
+
+.lightbox[open] {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 32px;
-  background: rgba(20, 20, 19, 0.78);
-  cursor: zoom-out;
+}
+
+.lightbox::backdrop {
+  background: #0c1539d4;
 }
 
 .lightbox img {
@@ -968,8 +990,9 @@ onBeforeUnmount(() => {
   right: 20px;
   width: 36px;
   height: 36px;
-  font-size: 24px;
-  line-height: 1;
+  display: grid;
+  place-items: center;
+  padding: 0;
   color: #fff;
   background: rgba(255, 255, 255, 0.14);
   border: 0;
