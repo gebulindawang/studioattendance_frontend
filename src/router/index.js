@@ -19,6 +19,12 @@ const router = createRouter({
       meta: { title: '上传课表', requiresAuth: true, roles: [ROLE.MEMBER] },
     },
     {
+      path: '/attendance',
+      name: 'my-attendance',
+      component: () => import('../views/MyAttendanceView.vue'),
+      meta: { title: '我的考勤', requiresAuth: true, roles: [ROLE.MEMBER] },
+    },
+    {
       path: '/admin',
       component: () => import('../views/admin/AdminLayout.vue'),
       meta: { requiresAuth: true, roles: [ROLE.ADMIN] },
@@ -52,6 +58,12 @@ const router = createRouter({
           name: 'admin-records',
           component: () => import('../views/admin/RecordsView.vue'),
           meta: { title: '考勤记录' },
+        },
+        {
+          path: 'makeup',
+          name: 'admin-makeup',
+          component: () => import('../views/admin/MakeupReviewView.vue'),
+          meta: { title: '补签审批' },
         },
         {
           path: 'config',
